@@ -1,13 +1,8 @@
 # scraper/utils/features/feature_builder.py
 from pathlib import Path
 import pandas as pd
-from .returns import compute_returns
-from .moving_averages import compute_moving_averages
-from .rsi import compute_rsi
-from .bollinger_bands import compute_bollinger_bands
-from .macd import compute_macd
-from .volatility import compute_volatility
-from .atr import compute_atr
+from ..features import compute_returns, compute_moving_averages, compute_bollinger_bands, compute_rsi, compute_macd, compute_volatility, compute_atr
+
 
 FEATURES_FOLDER = Path("data/features")
 FEATURES_FOLDER.mkdir(parents=True, exist_ok=True)
