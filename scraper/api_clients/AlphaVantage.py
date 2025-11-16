@@ -142,6 +142,7 @@ class StockScraperAV:
     def save_data(self, folder: str, format: str = "csv"):
         Path(folder).mkdir(parents=True, exist_ok=True)
         combined = []
+
         for ticker, df in self.data.items():
             file_path = os.path.join(folder, f"{ticker}.{format}")
             if format.lower() == "csv":
@@ -151,15 +152,23 @@ class StockScraperAV:
             else:
                 logging.warning(f"Unknown format {format}, skipping save for {ticker}")
                 continue
+
             combined.append(df.assign(TICKER=ticker))
             logging.info(f"Saved {ticker} data to {file_path}")
+
         if combined:
             combined_df = pd.concat(combined, ignore_index=True)
-            combined_file = os.path.join(folder, f"combined.{format}")
+
+            sorted_tickers = sorted(self.data.keys(), key=str.lower)
+            ticker_filename = "_".join(t.upper() for t in sorted_tickers)
+
+            combined_file = os.path.join(folder, f"{ticker_filename}.{format}")
+
             if format.lower() == "csv":
                 combined_df.to_csv(combined_file, index=False)
             else:
                 combined_df.to_parquet(combined_file, index=False)
+
             logging.info(f"Saved combined data to {combined_file}")
 
     def get_data(self, ticker: str):

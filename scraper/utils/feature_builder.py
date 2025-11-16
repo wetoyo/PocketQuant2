@@ -21,7 +21,9 @@ def build_features(
 ):
     save_path = save_path or FEATURES_FOLDER
     save_path.mkdir(parents=True, exist_ok=True)
-
+    ticker = None
+    if isinstance(df.columns, pd.MultiIndex):
+        ticker = df.columns.get_level_values(1)[1]
     features = []
 
     if returns:
@@ -43,6 +45,14 @@ def build_features(
 
     # Merge all features on DATE
     from functools import reduce
+    for i, f in enumerate(features):
+        if isinstance(f.columns, pd.MultiIndex):
+            f.columns = [col[0] if col[1] == '' else f"{col[0]}_{col[1]}" for col in f.columns]
+            features[i] = f
     df_features = reduce(lambda left,right: pd.merge(left,right,on="DATE", how="outer"), features)
+    if save_path:
+        filename = f"{ticker}_features.csv" if ticker else "features.csv"
+        df_features.to_csv(save_path / filename, index=False)
+
 
     return df_features
