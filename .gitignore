@@ -24,7 +24,7 @@ env/
 *.log
 *.tmp
 *.bak
-
+.env
 # --- IDE and editor settings ---
 .vscode/
 .idea/
