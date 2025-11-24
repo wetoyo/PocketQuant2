@@ -16,7 +16,13 @@ from scraper.api_clients.AlphaVantage import StockScraperAV
 from scraper.utils.feature_builder import build_features
 
 # Import database helpers
-from scraper.utils.build_db import create_or_connect_db, read_table
+from scraper.utils.build_db import (
+    create_or_connect_db, 
+    read_table, 
+    write_data_to_db, 
+    get_ticker_date_range, 
+    read_by_date
+)
 
 # Import project paths
 from configs.paths import DATA_RAW, DATA_PROCESSED, DATA_FEATURES, DATABASE_PATH
@@ -38,8 +44,14 @@ class BaseSetup:
     ):
         
         if db_name is None:
-            tickers_sorted = sorted([t.upper() for t in tickers])
-            db_name = f"{'_'.join(tickers_sorted)}.db"
+            # db_name is now used for raw data cache, maybe we can default to a shared one
+            # or keep it specific. Let's default to "market_data.db" if not provided, 
+            # or keep the ticker-based name if that's preferred for isolation.
+            # The prompt said "big database file", so maybe a single one is better.
+            # But let's stick to the user's pattern or a sensible default.
+            # If tickers list is long, a single DB is better.
+            db_name = "market_data.db"
+            
         self.tickers = tickers
         self.db_name = db_name
         
@@ -64,7 +76,8 @@ class BaseSetup:
             "atr_windows": [14]
         }
 
-        self.data: pd.DataFrame = pd.DataFrame()
+        self.data: pd.DataFrame = pd.DataFrame() # This might need to be a dict if multiple tickers
+        self.data_dict = {} # Store raw data per ticker
         self.features: pd.DataFrame = pd.DataFrame()
     
     def connect_db(self):
@@ -73,67 +86,157 @@ class BaseSetup:
         return conn
 
     def _fetch_data(self, save_folder: Path = DATA_RAW):
-        """Internal method to fetch data using the selected scraper."""
-        if self.scraper_type.lower() == "yfinance":
-            scraper = StockScraper(
-                tickers=self.tickers,
-                start_date=self.start_date,
-                end_date=self.end_date,
-                interval=self.interval,
-                adjusted=self.adjusted,
-                fill_missing=self.fill_missing
-            )
-        elif self.scraper_type.lower() == "alphavantage":
-            if not self.api_key:
-                raise ValueError("API key required for AlphaVantage scraper")
-            scraper = StockScraperAV(
-                api_key=self.api_key,
-                tickers=self.tickers,
-                start_date=self.start_date,
-                end_date=self.end_date,
-                interval=self.interval,
-                adjusted=self.adjusted,
-                fill_missing=self.fill_missing
-            )
-        else:
-            raise ValueError("scraper_type must be 'yfinance' or 'alphavantage'")
+        """
+        Fetch data for each ticker.
+        Check DB first. If missing or incomplete, fetch from API and update DB.
+        """
+        self.data_dict = {}
+        
+        # Ensure start_date and end_date are set or handled
+        # If not set, we might default to something or rely on scraper defaults.
+        # But for DB check, we need specific dates to compare.
+        # Let's assume if they are None, we always fetch latest? 
+        # Or we fetch what we can.
+        
+        tickers_to_fetch = []
+        
+        for ticker in self.tickers:
+            print(f"Checking data for {ticker}...")
+            
+            # Check DB
+            min_date, max_date = get_ticker_date_range(self.db_path, ticker)
+            
+            data_needed = False
+            if min_date is None or max_date is None:
+                data_needed = True
+                print(f"  No data found in DB for {ticker}.")
+            else:
+                # Simple check: if requested start < db_min or requested end > db_max
+                # We might need to fetch.
+                # For simplicity, if ANY data is missing from requested range, we might just fetch the whole range 
+                # or the missing part. Merging is tricky.
+                # Let's try to just fetch if the requested range is strictly outside what we have.
+                # Or simpler: if we need data and it's not fully there, fetch it all (overwrite).
+                
+                # Convert to datetime for comparison
+                db_min = pd.to_datetime(min_date)
+                db_max = pd.to_datetime(max_date)
+                
+                req_start = pd.to_datetime(self.start_date) if self.start_date else None
+                req_end = pd.to_datetime(self.end_date) if self.end_date else pd.Timestamp.now()
+                
+                if req_start and req_start < db_min:
+                    data_needed = True
+                    print(f"  Requested start {req_start.date()} < DB start {db_min.date()}. Fetching...")
+                elif req_end and req_end > db_max + pd.Timedelta(days=1): # Allow 1 day buffer
+                    data_needed = True
+                    print(f"  Requested end {req_end.date()} > DB end {db_max.date()}. Fetching...")
+                else:
+                    print(f"  Data for {ticker} exists in DB ({db_min.date()} to {db_max.date()}). Loading from DB.")
+                    # Load from DB
+                    df = read_by_date(self.db_path, ticker, self.start_date, self.end_date)
+                    self.data_dict[ticker] = df
 
-        scraper.fetch_data()
-        scraper.clean_data()
+            if data_needed:
+                tickers_to_fetch.append(ticker)
 
-        if save_folder:
-            scraper.save_data(folder=save_folder, format="csv")
+        if tickers_to_fetch:
+            print(f"Fetching from API for: {tickers_to_fetch}")
+            if self.scraper_type.lower() == "yfinance":
+                scraper = StockScraper(
+                    tickers=tickers_to_fetch,
+                    start_date=self.start_date,
+                    end_date=self.end_date,
+                    interval=self.interval,
+                    adjusted=self.adjusted,
+                    fill_missing=self.fill_missing
+                )
+            elif self.scraper_type.lower() == "alphavantage":
+                if not self.api_key:
+                    raise ValueError("API key required for AlphaVantage scraper")
+                scraper = StockScraperAV(
+                    api_key=self.api_key,
+                    tickers=tickers_to_fetch,
+                    start_date=self.start_date,
+                    end_date=self.end_date,
+                    interval=self.interval,
+                    adjusted=self.adjusted,
+                    fill_missing=self.fill_missing
+                )
+            else:
+                raise ValueError("scraper_type must be 'yfinance' or 'alphavantage'")
 
-        self.data = scraper.data
+            scraper.fetch_data()
+            scraper.clean_data()
+            
+            # Update self.data_dict with new data
+            # scraper.data is a dict {ticker: df}
+            for ticker, df in scraper.data.items():
+                self.data_dict[ticker] = df
+            
+            # Write new data to DB
+            print("Writing fetched data to database...")
+            write_data_to_db(scraper.data, db_path=self.db_path)
+            
+            # Optionally save to CSV raw if needed (legacy support or backup)
+            if save_folder:
+                scraper.save_data(folder=save_folder, format="csv")
+
+        # Combine all data into self.data for backward compatibility if needed, 
+        # but self.data was originally a dict in _build_features call?
+        # In original code: self.data = scraper.data which is a dict.
+        self.data = self.data_dict
         return self.data
 
     def _build_features(self, df=None, save_path: Path = DATA_FEATURES):
         """
         Build features for EACH ticker separately.
+        Writes features to CSV files.
         Returns a dict: { ticker : features_df }.
         """
         if df is None:
             df = self.data
 
         if not isinstance(df, dict):
+            # If it's a single DataFrame, wrap it? Or error?
+            # Original code expected dict.
             raise ValueError("Expected df to be a dict of DataFrames")
 
         features_by_ticker = {}
+        
+        # Ensure save_path exists
+        save_path.mkdir(parents=True, exist_ok=True)
 
         for ticker, sub_df in df.items():
+            if sub_df.empty:
+                print(f"Skipping features for {ticker} (empty data)")
+                continue
 
             if "DATE" not in sub_df.columns:
-                raise KeyError(f"Ticker {ticker} is missing DATE column.")
+                # Try to fix if index is date
+                if isinstance(sub_df.index, pd.DatetimeIndex):
+                    sub_df = sub_df.reset_index()
+                    if "Date" in sub_df.columns:
+                        sub_df = sub_df.rename(columns={"Date": "DATE"})
+                
+                if "DATE" not in sub_df.columns:
+                    print(f"Skipping {ticker}: Missing DATE column.")
+                    continue
 
             sub_df = sub_df.sort_values("DATE").reset_index(drop=True)
 
             features_df = build_features(
                 df=sub_df,
-                save_path=save_path,
+                save_path=None, # Don't save inside build_features, we save here
                 **self.features_options
             )
 
             features_df["TICKER"] = ticker
+            
+            # Save to CSV
+            csv_file = save_path / f"{ticker}_features.csv"
+            features_df.to_csv(csv_file, index=False)
+            print(f"Saved features for {ticker} to {csv_file}")
 
             features_by_ticker[ticker] = features_df
 
@@ -141,46 +244,23 @@ class BaseSetup:
         self.features = features_by_ticker
         return self.features
 
-    def _write_to_db(self, db_path="database.db"):
-        """
-        Write features to the database, one table per ticker.
-        Updates existing rows based on DATE.
-        """
-        if not isinstance(self.features, dict) or not self.features:
-            raise ValueError("Features must be a non-empty dict. Run _build_features first.")
-
-        from scraper.utils.build_db import write_features_dict_to_db
-
-        write_features_dict_to_db(self.features, db_path=db_path)
-        print(f"All features written/updated in {db_path}")
-
-    def _read_from_db(self, table_name="features_table"):
-        """Read features from DB as pandas DataFrame."""
-        df = read_table(self.db_path, table_name)
-        return df
-
     def run_pipeline(
         self,
         save_folder_raw: Path = DATA_RAW,
         save_folder_features: Path = DATA_FEATURES,
-        db_path: Path = None
+        db_path: Path = None # Unused now, uses self.db_path
     ):
         """
         Run the full pipeline:
-        1. Scrape data
+        1. Fetch data (check DB, fetch API if needed, write to DB)
         2. Build features
-        3. Write to DB
-        4. Read back as DataFrame
+        3. Write features to CSV
         """
-        print("Fetching data...")
+        print("Starting pipeline...")
         self._fetch_data(save_folder=save_folder_raw)
 
-        print("Building features...")
+        print("Building and saving features...")
         self._build_features(df=self.data, save_path=save_folder_features)
-
-        print("Writing features to database...")
-        print(self.db_path)
-        self._write_to_db(db_path=self.db_path)
 
         print("Finished setup.")
         return self.features

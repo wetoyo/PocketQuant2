@@ -16,23 +16,31 @@ def create_or_connect_db(db_path="database.db"):
     return conn
 
 
-def write_features_dict_to_db(features_dict, db_path="database.db"):
+def write_data_to_db(data_dict, db_path="database.db"):
     """
-    Write a dict of features DataFrames to SQLite DB.
-    Each ticker gets its own table: <TICKER>_features.
+    Write a dict of DataFrames (raw data or features) to SQLite DB.
+    Each ticker gets its own table: <TICKER>.
     Updates existing rows based on DATE (PRIMARY KEY).
     """
-    if not isinstance(features_dict, dict):
-        raise ValueError("features_dict must be a dict of DataFrames keyed by ticker")
+    if not isinstance(data_dict, dict):
+        raise ValueError("data_dict must be a dict of DataFrames keyed by ticker")
 
     conn = create_or_connect_db(db_path)
     cursor = conn.cursor()
 
-    for ticker, df in features_dict.items():
-        table_name = f"{ticker.upper()}_features"
+    for ticker, df in data_dict.items():
+        # Use ticker as table name for raw data, or whatever key is passed
+        table_name = ticker.upper()
 
         if "DATE" not in df.columns:
-            raise KeyError(f"Missing 'DATE' column in ticker {ticker} DataFrame")
+            # Try to see if index is datetime
+            if isinstance(df.index, pd.DatetimeIndex):
+                df = df.reset_index()
+                if "Date" in df.columns:
+                    df = df.rename(columns={"Date": "DATE"})
+            
+            if "DATE" not in df.columns:
+                 raise KeyError(f"Missing 'DATE' column in ticker {ticker} DataFrame")
         
         df = df.copy()
         if pd.api.types.is_datetime64_any_dtype(df["DATE"]):
@@ -61,67 +69,84 @@ def write_features_dict_to_db(features_dict, db_path="database.db"):
         """
         cursor.executemany(insert_sql, df.values.tolist())
         conn.commit()
-        print(f"Features written/updated in table '{table_name}'")
+        print(f"Data written/updated in table '{table_name}'")
 
     conn.close()
+
+
+def get_ticker_date_range(db_path, ticker):
+    """
+    Get the min and max date for a ticker in the DB.
+    Returns (min_date, max_date) as strings, or (None, None) if table doesn't exist.
+    """
+    table_name = ticker.upper()
+    conn = create_or_connect_db(db_path)
+    cursor = conn.cursor()
+    
+    # Check if table exists
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+    if cursor.fetchone() is None:
+        conn.close()
+        return None, None
+
+    cursor.execute(f'SELECT MIN(DATE), MAX(DATE) FROM "{table_name}"')
+    result = cursor.fetchone()
+    conn.close()
+    
+    if result:
+        return result[0], result[1]
+    return None, None
 
 
 def read_table(db_path, table_name):
     """Read an entire table into a pandas DataFrame."""
     conn = create_or_connect_db(db_path)
-    df = pd.read_sql(f'SELECT * FROM "{table_name}"', conn)
-    conn.close()
+    try:
+        df = pd.read_sql(f'SELECT * FROM "{table_name}"', conn)
+    except Exception as e:
+        print(f"Error reading table {table_name}: {e}")
+        df = pd.DataFrame()
+    finally:
+        conn.close()
+    
+    if not df.empty and "DATE" in df.columns:
+        df["DATE"] = pd.to_datetime(df["DATE"])
+        
     return df
 
 
 def read_by_ticker(db_path, ticker):
-    """Read a single ticker's features table."""
-    table_name = f"{ticker.upper()}_features"
+    """Read a single ticker's table."""
+    table_name = ticker.upper()
     return read_table(db_path, table_name)
 
 
 def read_by_date(db_path, ticker, start_date=None, end_date=None):
-    """Return rows filtered by date from a ticker's features table."""
-    table_name = f"{ticker.upper()}_features"
+    """Return rows filtered by date from a ticker's table."""
+    table_name = ticker.upper()
     conn = create_or_connect_db(db_path)
+    
+    # Check if table exists first to avoid error
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+    if cursor.fetchone() is None:
+        conn.close()
+        return pd.DataFrame()
+
     query = f'SELECT * FROM "{table_name}" WHERE 1=1'
     params = []
 
     if start_date:
         query += " AND DATE >= ?"
-        params.append(start_date)
+        params.append(str(start_date))
     if end_date:
         query += " AND DATE <= ?"
-        params.append(end_date)
+        params.append(str(end_date))
 
     df = pd.read_sql(query, conn, params=params)
     conn.close()
+    
+    if not df.empty and "DATE" in df.columns:
+        df["DATE"] = pd.to_datetime(df["DATE"])
+        
     return df
-
-
-def read_multiple_tickers(db_path, tickers):
-    """
-    Read multiple tickers' features and combine into one DataFrame.
-    Adds TICKER column if missing.
-    """
-    dfs = []
-    for ticker in tickers:
-        df = read_by_ticker(db_path, ticker)
-        if "TICKER" not in df.columns:
-            df["TICKER"] = ticker.upper()
-        dfs.append(df)
-    return pd.concat(dfs, ignore_index=True)
-
-
-def csvs_to_db(folder_path, db_path="database.db"):
-    """
-    Read all CSV files in a folder and write them as ticker tables in the DB.
-    Each CSV must have a 'DATE' column.
-    Existing rows are updated (INSERT OR REPLACE).
-    """
-    folder_path = Path(folder_path)
-    for csv_file in folder_path.glob("*.csv"):
-        ticker = csv_file.stem.split("_")[0].upper()  # assumes CSV naming like AAPL_features.csv
-        df = pd.read_csv(csv_file)
-        write_features_dict_to_db({ticker: df}, db_path=db_path)
-        print(f"Written CSV {csv_file} to table {ticker}_features")
