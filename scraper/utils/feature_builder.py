@@ -12,14 +12,20 @@ def build_features(
     save_path: Path = None,
     returns=True,
     log_returns=True,
-    ma_windows=[5,20,50],
-    bb_windows=[20],
-    rsi_windows=[14],
-    macd_params=[(12,26,9)],
-    vol_windows=[10],
-    atr_windows=[14]
+    ma_windows=None,
+    bb_windows=None,
+    rsi_windows=None,
+    macd_params=None,
+    vol_windows=None,
+    atr_windows=None
 ):
     save_path = save_path or FEATURES_FOLDER
+    ma_windows = ma_windows or [5, 20, 50]
+    bb_windows = bb_windows or [20]
+    rsi_windows = rsi_windows or [14]
+    macd_params = macd_params or [(12, 26, 9)]
+    vol_windows = vol_windows or [10]
+    atr_windows = atr_windows or [14]
     save_path.mkdir(parents=True, exist_ok=True)
     ticker = None
     if isinstance(df.columns, pd.MultiIndex):

@@ -52,6 +52,8 @@ class StockScraper:
                         logging.warning(f"No data found for {ticker}, skipping.")
                         break
                     df.reset_index(inplace=True)
+                    if isinstance(df.columns, pd.MultiIndex):
+                        df.columns = df.columns.get_level_values(0)
                     df.rename(columns=lambda x: x.upper(), inplace=True)
                     required_cols = ["DATE", "OPEN", "HIGH", "LOW", "CLOSE", "VOLUME"]
                     if "ADJ CLOSE" in df.columns:
@@ -76,7 +78,7 @@ class StockScraper:
             df.set_index("DATE", inplace=True)
             if self.fill_missing:
                 df.interpolate(method='time', inplace=True)
-                df.fillna(method='bfill', inplace=True)
+                df.bfill(inplace=True)
             df.reset_index(inplace=True)
             self.data[ticker] = df
 
