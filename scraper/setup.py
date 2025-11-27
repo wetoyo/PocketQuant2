@@ -44,12 +44,6 @@ class BaseSetup:
     ):
         
         if db_name is None:
-            # db_name is now used for raw data cache, maybe we can default to a shared one
-            # or keep it specific. Let's default to "market_data.db" if not provided, 
-            # or keep the ticker-based name if that's preferred for isolation.
-            # The prompt said "big database file", so maybe a single one is better.
-            # But let's stick to the user's pattern or a sensible default.
-            # If tickers list is long, a single DB is better.
             db_name = "market_data.db"
             
         self.tickers = tickers
@@ -91,12 +85,7 @@ class BaseSetup:
         Check DB first. If missing or incomplete, fetch from API and update DB.
         """
         self.data_dict = {}
-        
-        # Ensure start_date and end_date are set or handled
-        # If not set, we might default to something or rely on scraper defaults.
-        # But for DB check, we need specific dates to compare.
-        # Let's assume if they are None, we always fetch latest? 
-        # Or we fetch what we can.
+    
         
         tickers_to_fetch = []
         
@@ -111,14 +100,6 @@ class BaseSetup:
                 data_needed = True
                 print(f"  No data found in DB for {ticker}.")
             else:
-                # Simple check: if requested start < db_min or requested end > db_max
-                # We might need to fetch.
-                # For simplicity, if ANY data is missing from requested range, we might just fetch the whole range 
-                # or the missing part. Merging is tricky.
-                # Let's try to just fetch if the requested range is strictly outside what we have.
-                # Or simpler: if we need data and it's not fully there, fetch it all (overwrite).
-                
-                # Convert to datetime for comparison
                 db_min = pd.to_datetime(min_date)
                 db_max = pd.to_datetime(max_date)
                 
@@ -182,9 +163,6 @@ class BaseSetup:
             if save_folder:
                 scraper.save_data(folder=save_folder, format="csv")
 
-        # Combine all data into self.data for backward compatibility if needed, 
-        # but self.data was originally a dict in _build_features call?
-        # In original code: self.data = scraper.data which is a dict.
         self.data = self.data_dict
         return self.data
 
@@ -205,7 +183,8 @@ class BaseSetup:
         features_by_ticker = {}
         
         # Ensure save_path exists
-        save_path.mkdir(parents=True, exist_ok=True)
+        if save_path:
+            save_path.mkdir(parents=True, exist_ok=True)
 
         for ticker, sub_df in df.items():
             if sub_df.empty:
@@ -233,10 +212,11 @@ class BaseSetup:
 
             features_df["TICKER"] = ticker
             
-            # Save to CSV
-            csv_file = save_path / f"{ticker}_features.csv"
-            features_df.to_csv(csv_file, index=False)
-            print(f"Saved features for {ticker} to {csv_file}")
+            if save_path:
+                # Save to CSV
+                csv_file = save_path / f"{ticker}_features.csv"
+                features_df.to_csv(csv_file, index=False)
+                print(f"Saved features for {ticker} to {csv_file}")
 
             features_by_ticker[ticker] = features_df
 
@@ -248,7 +228,6 @@ class BaseSetup:
         self,
         save_folder_raw: Path = DATA_RAW,
         save_folder_features: Path = DATA_FEATURES,
-        db_path: Path = None # Unused now, uses self.db_path
     ):
         """
         Run the full pipeline:
