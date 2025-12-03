@@ -20,6 +20,7 @@ from scraper.utils.build_db import (
     create_or_connect_db, 
     read_table, 
     write_data_to_db, 
+    write_options_to_db,
     get_ticker_date_range, 
     read_by_date
 )
@@ -41,6 +42,7 @@ class BaseSetup:
         adjusted=True,
         fill_missing=True,
         features_options=None,  # dict with MA, RSI, BB, etc.
+        include_options=False,
     ):
         
         if db_name is None:
@@ -57,6 +59,7 @@ class BaseSetup:
         self.interval = interval
         self.adjusted = adjusted
         self.fill_missing = fill_missing
+        self.include_options = include_options
         
         # Feature options with defaults
         self.features_options = features_options or {
@@ -162,6 +165,28 @@ class BaseSetup:
             # Optionally save to CSV raw if needed (legacy support or backup)
             if save_folder:
                 scraper.save_data(folder=save_folder, format="csv")
+
+        # Fetch options if requested (independent of price data)
+        if self.include_options:
+            print("Fetching options data...")
+            # Create a scraper instance for all tickers to fetch options
+            # We use the same configuration as the main scraper
+            if self.scraper_type.lower() == "yfinance":
+                options_scraper = StockScraper(
+                    tickers=self.tickers,
+                    start_date=self.start_date,
+                    end_date=self.end_date,
+                    interval=self.interval,
+                    adjusted=self.adjusted,
+                    fill_missing=self.fill_missing
+                )
+                if hasattr(options_scraper, 'fetch_options'):
+                    options_scraper.fetch_options()
+                    # Save options to DB
+                    print("Writing options data to database...")
+                    write_options_to_db(options_scraper.options_data)
+            else:
+                print("Options fetching is only supported for yfinance scraper.")
 
         self.data = self.data_dict
         return self.data

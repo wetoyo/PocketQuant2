@@ -150,3 +150,59 @@ def read_by_date(db_path, ticker, start_date=None, end_date=None):
         df["DATE"] = pd.to_datetime(df["DATE"])
         
     return df
+
+
+def write_options_to_db(options_data, db_name="options_data.db"):
+    """
+    Write options data to SQLite DB.
+    options_data structure: { ticker: { expiration: { 'calls': df, 'puts': df } } }
+    Creates one table per ticker containing all expirations and types.
+    """
+    if not options_data:
+        print("No options data to write.")
+        return
+
+    conn = create_or_connect_db(db_name)
+    
+    for ticker, dates_dict in options_data.items():
+        all_dfs = []
+        for date, chains in dates_dict.items():
+            for kind, df in chains.items():
+                if df is None or df.empty:
+                    continue
+                
+                # Create a copy to avoid modifying original
+                df_copy = df.copy()
+                
+                # Add metadata columns
+                df_copy['EXPIRATION'] = date
+                df_copy['OPTION_TYPE'] = kind
+                df_copy['FETCH_DATE'] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+                
+                # Ensure columns are strings to avoid DB issues
+                df_copy.columns = [str(c) for c in df_copy.columns]
+                
+                all_dfs.append(df_copy)
+        
+        if not all_dfs:
+            print(f"No options data found for {ticker}")
+            continue
+
+        combined_df = pd.concat(all_dfs, ignore_index=True)
+        table_name = ticker.upper()
+        
+        try:
+            # Append new data
+            combined_df.to_sql(table_name, conn, if_exists='append', index=False)
+            print(f"Options data appended to table '{table_name}' in {db_name}")
+            
+            # Create index on FETCH_DATE if it doesn't exist
+            cursor = conn.cursor()
+            index_name = f"idx_{table_name}_fetch_date"
+            cursor.execute(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} (FETCH_DATE)")
+            conn.commit()
+            
+        except Exception as e:
+            print(f"Error writing options for {ticker}: {e}")
+
+    conn.close()

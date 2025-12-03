@@ -114,6 +114,75 @@ class StockScraper:
 
             logging.info(f"Saved combined data to {combined_file}")
 
+
+    def fetch_options(self):
+        """
+        Fetch options chain for all tickers.
+        Stores in self.options_data = { ticker: { expiration: { 'calls': df, 'puts': df } } }
+        """
+        self.options_data = {}
+        for ticker in self.tickers:
+            try:
+                logging.info(f"Fetching options for {ticker}")
+                tk = yf.Ticker(ticker)
+                expirations = tk.options
+                
+                if not expirations:
+                    logging.warning(f"No options found for {ticker}")
+                    continue
+                    
+                self.options_data[ticker] = {}
+                
+                # Filter expirations to next 365 days
+                today = pd.Timestamp.now()
+                max_date = today + pd.Timedelta(days=365)
+                
+                valid_expirations = []
+                for date_str in expirations:
+                    try:
+                        exp_date = pd.to_datetime(date_str)
+                        if today <= exp_date <= max_date:
+                            valid_expirations.append(date_str)
+                    except Exception as e:
+                        logging.warning(f"Could not parse expiration date {date_str}: {e}")
+                
+                if not valid_expirations:
+                    logging.warning(f"No options found within next year for {ticker}")
+                    continue
+
+                for date in valid_expirations:
+                    # logging.info(f"  Fetching options for {ticker} exp {date}")
+                    opt = tk.option_chain(date)
+                    self.options_data[ticker][date] = {
+                        'calls': opt.calls,
+                        'puts': opt.puts
+                    }
+                    
+            except Exception as e:
+                logging.error(f"Error fetching options for {ticker}: {e}")
+
+    def save_options(self, folder: str, format: str = "csv"):
+        """
+        Save options data to folder/ticker/expiration_calls.csv
+        """
+        Path(folder).mkdir(parents=True, exist_ok=True)
+        
+        for ticker, dates_dict in getattr(self, 'options_data', {}).items():
+            ticker_folder = os.path.join(folder, ticker)
+            Path(ticker_folder).mkdir(parents=True, exist_ok=True)
+            
+            for date, chains in dates_dict.items():
+                for kind, df in chains.items(): # kind is 'calls' or 'puts'
+                    filename = f"{date}_{kind}.{format}"
+                    file_path = os.path.join(ticker_folder, filename)
+                    
+                    if format.lower() == "csv":
+                        df.to_csv(file_path, index=False)
+                    elif format.lower() == "parquet":
+                        df.to_parquet(file_path, index=False)
+                        
+            logging.info(f"Saved options for {ticker} to {ticker_folder}")
+
     def get_data(self, ticker: str):
         return self.data.get(ticker)
 
