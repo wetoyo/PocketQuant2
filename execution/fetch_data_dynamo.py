@@ -1,5 +1,4 @@
 import sys
-import os
 import logging
 import time
 import pandas as pd
@@ -15,8 +14,10 @@ project_root = current_dir.parent
 sys.path.append(str(project_root))
 
 from scraper.api_clients.YFinance import StockScraper
-from configs.paths import DATA_RAW
 
+# -----------------------------------
+# LOGGING SETUP
+# -----------------------------------
 log_dir = current_dir / "logs"
 log_dir.mkdir(exist_ok=True)
 log_file = log_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -26,7 +27,6 @@ logger.setLevel(logging.INFO)
 
 file_handler = logging.FileHandler(log_file)
 stream_handler = logging.StreamHandler(sys.stdout)
-
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 file_handler.setFormatter(formatter)
 stream_handler.setFormatter(formatter)
@@ -37,6 +37,9 @@ if logger.hasHandlers():
 logger.addHandler(file_handler)
 logger.addHandler(stream_handler)
 
+# -----------------------------------
+# UTILS
+# -----------------------------------
 def read_tickers(file_path):
     try:
         with open(file_path, 'r') as f:
@@ -48,54 +51,39 @@ def read_tickers(file_path):
 
 
 def normalize_value(v):
-    """
-    DynamoDB cannot store numpy types, timestamps, NaN, etc.
-    Convert everything to JSON-safe primitives.
-    """
+    """Convert values to DynamoDB-friendly types."""
     if isinstance(v, (int, float, str, bool)) or v is None:
         return v
-
-    # Convert Timestamp/Datetime/np types/etc to string
     return str(v)
 
 
-def write_stock_to_dynamo(df, table_name="MarketData"):
-    """
-    Expects df with columns:
-    index: Date
-    and columns: open, high, low, close, volume, etc.
-    """
+# -----------------------------------
+# SAFETY CHECK
+# -----------------------------------
+def table_near_limit(table_name, threshold_gb=24):
+    """Return True if the table is at or above threshold (default 24GB)."""
+    dynamo = boto3.client("dynamodb")
+    try:
+        desc = dynamo.describe_table(TableName=table_name)
+        size_bytes = desc["Table"]["TableSizeBytes"]
+        size_gb = size_bytes / (1024**3)
+        if size_gb >= threshold_gb:
+            logging.warning(f"DynamoDB table {table_name} size {size_gb:.2f}GB >= threshold {threshold_gb}GB")
+            return True
+        return False
+    except ClientError as e:
+        logging.error(f"Could not describe table {table_name}: {e}")
+        return True  # fail-safe
+
+
+def write_options_to_dynamo(options_data, table_name="options_data"):
     dynamo = boto3.resource("dynamodb")
     table = dynamo.Table(table_name)
 
-    df = df.reset_index()
+    if table_near_limit(table_name):
+        logging.error("Table is near or over limit. Aborting write to prevent charges.")
+        return
 
-    for _, row in df.iterrows():
-        item = {
-            "ticker": row.get("ticker"),
-            "date": str(row.get("Date")),
-        }
-
-        # Add all other columns normalized
-        for col, val in row.items():
-            if col not in ("ticker", "Date"):
-                item[col] = normalize_value(val)
-
-        try:
-            table.put_item(Item=item)
-        except ClientError as e:
-            logging.error(f"Failed to write stock row to DynamoDB: {e}")
-
-
-def write_options_to_dynamo(options_data, table_name="OptionsChain"):
-    """
-    Expects list of dicts OR DataFrame with fields:
-    ticker, expiration, strike, type (call/put), lastPrice, impliedVolatility, etc.
-    """
-    dynamo = boto3.resource("dynamodb")
-    table = dynamo.Table(table_name)
-
-    # Convert DataFrame → list of dicts
     if hasattr(options_data, "to_dict"):
         options_data = options_data.to_dict(orient="records")
 
@@ -109,15 +97,9 @@ def write_options_to_dynamo(options_data, table_name="OptionsChain"):
             logging.warning(f"Skipping malformed option row: {row}")
             continue
 
-        # Composite key for fast lookups
         option_key = f"{exp}_{strike}_{opt_type}"
+        item = {"ticker": str(ticker), "option_key": option_key}
 
-        item = {
-            "ticker": str(ticker),
-            "option_key": option_key,
-        }
-
-        # Normalize all fields
         for k, v in row.items():
             item[k] = normalize_value(v)
 
@@ -126,10 +108,9 @@ def write_options_to_dynamo(options_data, table_name="OptionsChain"):
         except ClientError as e:
             logging.error(f"Failed to write options row to DynamoDB: {e}")
 
-
 def main():
     start_time = time.time()
-    logging.info("Starting data fetch process...")
+    logging.info("Starting options fetch process...")
 
     tickers_file = current_dir / "tickers.txt"
     if not tickers_file.exists():
@@ -157,30 +138,19 @@ def main():
             fill_missing=True
         )
 
-        # -------- STOCK DATA --------
-        logging.info("Fetching stock price data...")
-        scraper.fetch_data()
-        scraper.clean_data()
-
-        logging.info("Writing stock price data to DynamoDB...")
-        write_stock_to_dynamo(scraper.data)
-        logging.info("Stock price data saved.")
-
-        # -------- OPTIONS DATA --------
+        # Fetch only options data
         logging.info("Fetching options data...")
         scraper.fetch_options()
 
         logging.info("Writing options data to DynamoDB...")
         write_options_to_dynamo(scraper.options_data)
-        logging.info("Options data saved.")
-
-        logging.info("Data fetch completed successfully.")
+        logging.info("Options data saved successfully.")
 
     except Exception as e:
         logging.error(f"An error occurred during execution: {e}", exc_info=True)
 
-    end_time = time.time()
-    logging.info(f"Total execution time: {end_time - start_time:.2f} seconds")
+    duration = time.time() - start_time
+    logging.info(f"Total execution time: {duration:.2f} seconds")
 
 
 if __name__ == "__main__":
