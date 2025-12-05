@@ -103,19 +103,17 @@ def main():
     start_time = time.time()
     logging.info("Starting options fetch process...")
 
-    tickers_file = current_dir / "tickers.txt"
-    if not tickers_file.exists():
-        logging.error(f"Tickers file not found at {tickers_file}")
-        return
-
-    tickers = read_tickers(tickers_file)
-    if not tickers:
-        logging.error("No tickers found in file.")
-        return
-
-    logging.info(f"Found {len(tickers)} tickers: {tickers}")
-
     try:
+        tickers_file = current_dir / "tickers.txt"
+        if not tickers_file.exists():
+            raise FileNotFoundError(f"Tickers file not found at {tickers_file}")
+
+        tickers = read_tickers(tickers_file)
+        if not tickers:
+            raise ValueError("No tickers found in file.")
+
+        logging.info(f"Found {len(tickers)} tickers: {tickers}")
+
         today = datetime.now().date()
         start_date = today.strftime("%Y-%m-%d")
         end_date = (today + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
@@ -139,10 +137,11 @@ def main():
 
     except Exception as e:
         logging.error(f"An error occurred during execution: {e}", exc_info=True)
+        # Fail the script so GitHub Actions sees the error
+        sys.exit(1)
 
     duration = time.time() - start_time
     logging.info(f"Total execution time: {duration:.2f} seconds")
-
 
 if __name__ == "__main__":
     main()
