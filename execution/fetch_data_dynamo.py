@@ -15,6 +15,7 @@ sys.path.append(str(project_root))
 
 from scraper.api_clients.YFinance import StockScraper
 
+# Setup logging
 log_dir = current_dir / "logs"
 log_dir.mkdir(exist_ok=True)
 log_file = log_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -24,6 +25,7 @@ logger.setLevel(logging.INFO)
 
 file_handler = logging.FileHandler(log_file)
 stream_handler = logging.StreamHandler(sys.stdout)
+
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 file_handler.setFormatter(formatter)
 stream_handler.setFormatter(formatter)
@@ -43,61 +45,68 @@ def read_tickers(file_path):
         logging.error(f"Error reading tickers file: {e}")
         return []
 
-
-def normalize_value(v):
-    """Convert values to DynamoDB-friendly types."""
-    if isinstance(v, (int, float, str, bool)) or v is None:
-        return v
-    return str(v)
-
-
-def table_near_limit(table_name, threshold_gb=24):
-    """Return True if the table is at or above threshold (default 24GB)."""
-    dynamo = boto3.client("dynamodb")
+def table_near_limit(table_name, dynamo, threshold=0.9):
+    """
+    Checks if the table is near its provisioned limit (using TableSizeBytes / 10GB free tier).
+    Adjust threshold as needed.
+    """
     try:
         desc = dynamo.describe_table(TableName=table_name)
-        size_bytes = desc["Table"]["TableSizeBytes"]
-        size_gb = size_bytes / (1024**3)
-        if size_gb >= threshold_gb:
-            logging.warning(f"DynamoDB table {table_name} size {size_gb:.2f}GB >= threshold {threshold_gb}GB")
+        size_bytes = desc['Table']['TableSizeBytes']
+        max_bytes = 24 * 1024**3  # 10GB free tier
+        if size_bytes >= max_bytes * threshold:
+            logging.error(f"Table {table_name} size {size_bytes} bytes exceeds threshold {threshold*100}%")
             return True
         return False
     except ClientError as e:
-        logging.error(f"Could not describe table {table_name}: {e}")
+        logging.error(f"Cannot check table size due to missing permissions: {e}")
         raise RuntimeError(f"Cannot check table size due to missing permissions: {e}")
 
+def flatten_options_data(options_data):
+    """
+    Convert nested options_data dict into a list of flat dicts.
+    Each row will include 'ticker', 'expiration', 'type' ('calls'/'puts') and all option columns.
+    """
+    records = []
+    for ticker, dates_dict in options_data.items():
+        for date, chains in dates_dict.items():
+            for kind, df in chains.items():  # 'calls' or 'puts'
+                if not isinstance(df, pd.DataFrame):
+                    continue
+                for _, row in df.iterrows():
+                    rec = row.to_dict()
+                    rec.update({
+                        "ticker": ticker,
+                        "expiration": date,
+                        "type": kind
+                    })
+                    records.append(rec)
+    return records
 
 def write_options_to_dynamo(options_data, table_name="options_data"):
-    dynamo = boto3.resource("dynamodb")
-    table = dynamo.Table(table_name)
+    """
+    Write flattened options data to DynamoDB with a safety check.
+    """
+    dynamo = boto3.client("dynamodb", region_name="us-east-1")
+    
+    if table_near_limit(table_name, dynamo):
+        raise RuntimeError("Table is near limit. Aborting write to prevent charges.")
 
-    if table_near_limit(table_name):
-        logging.error("Table is near or over limit. Aborting write to prevent charges.")
+    records = flatten_options_data(options_data)
+    
+    if not records:
+        logging.warning("No options records to write.")
         return
 
-    if hasattr(options_data, "to_dict"):
-        options_data = options_data.to_dict(orient="records")
+    logging.info(f"Writing {len(records)} options records to DynamoDB table '{table_name}'...")
 
-    for row in options_data:
-        ticker = row.get("ticker")
-        exp = row.get("expiration")
-        strike = row.get("strike")
-        opt_type = row.get("type")
-
-        if not ticker or not exp or strike is None or not opt_type:
-            logging.warning(f"Skipping malformed option row: {row}")
-            continue
-
-        option_key = f"{exp}_{strike}_{opt_type}"
-        item = {"ticker": str(ticker), "option_key": option_key}
-
-        for k, v in row.items():
-            item[k] = normalize_value(v)
-
+    for rec in records:
+        item = {k: {"S": str(v)} for k, v in rec.items()}
         try:
-            table.put_item(Item=item)
-        except ClientError as e:
-            logging.error(f"Failed to write options row to DynamoDB: {e}")
+            dynamo.put_item(TableName=table_name, Item=item)
+        except Exception as e:
+            logging.error(f"Failed to write record for {rec.get('ticker')}, expiration {rec.get('expiration')}: {e}")
+            raise
 
 def main():
     start_time = time.time()
@@ -127,7 +136,6 @@ def main():
             fill_missing=True
         )
 
-        # Fetch only options data
         logging.info("Fetching options data...")
         scraper.fetch_options()
 
@@ -137,7 +145,6 @@ def main():
 
     except Exception as e:
         logging.error(f"An error occurred during execution: {e}", exc_info=True)
-        # Fail the script so GitHub Actions sees the error
         sys.exit(1)
 
     duration = time.time() - start_time
