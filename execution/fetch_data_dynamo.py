@@ -47,13 +47,12 @@ def read_tickers(file_path):
 
 def table_near_limit(table_name, dynamo, threshold=0.9):
     """
-    Checks if the table is near its provisioned limit (using TableSizeBytes / 10GB free tier).
-    Adjust threshold as needed.
+    Checks if the table is near its provisioned limit (25GB free tier).
     """
     try:
         desc = dynamo.describe_table(TableName=table_name)
         size_bytes = desc['Table']['TableSizeBytes']
-        max_bytes = 24 * 1024**3  # 10GB free tier
+        max_bytes = 24 * 1024**3  # 25 GB free tier
         if size_bytes >= max_bytes * threshold:
             logging.error(f"Table {table_name} size {size_bytes} bytes exceeds threshold {threshold*100}%")
             return True
@@ -65,27 +64,37 @@ def table_near_limit(table_name, dynamo, threshold=0.9):
 def flatten_options_data(options_data):
     """
     Convert nested options_data dict into a list of flat dicts.
-    Each row will include 'ticker', 'expiration', 'type' ('calls'/'puts') and all option columns.
     """
     records = []
     for ticker, dates_dict in options_data.items():
         for date, chains in dates_dict.items():
-            for kind, df in chains.items():  # 'calls' or 'puts'
+            for kind, df in chains.items():
                 if not isinstance(df, pd.DataFrame):
                     continue
                 for _, row in df.iterrows():
+                    # Partition key
+                    fetch_date = row.get("FETCH_DATE")
+                    if fetch_date is None:
+                        fetch_date = pd.Timestamp.now().strftime("%Y-%m-%d")
+                    
+                    # Sort key
+                    strike = row.get("Strike") or row.get("STRIKE") or "0"
+                    ticker_contract = f"{ticker}_{date}_{kind}_{strike}"
+                    
                     rec = row.to_dict()
                     rec.update({
                         "ticker": ticker,
                         "expiration": date,
-                        "type": kind
+                        "type": kind,
+                        "date": str(fetch_date),
+                        "ticker_contract": ticker_contract
                     })
                     records.append(rec)
     return records
 
 def write_options_to_dynamo(options_data, table_name="options_data"):
     """
-    Write flattened options data to DynamoDB with a safety check.
+    Write flattened options data to DynamoDB with safety check.
     """
     dynamo = boto3.client("dynamodb", region_name="us-east-1")
     
