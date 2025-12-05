@@ -15,9 +15,6 @@ sys.path.append(str(project_root))
 
 from scraper.api_clients.YFinance import StockScraper
 
-# -----------------------------------
-# LOGGING SETUP
-# -----------------------------------
 log_dir = current_dir / "logs"
 log_dir.mkdir(exist_ok=True)
 log_file = log_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -37,9 +34,6 @@ if logger.hasHandlers():
 logger.addHandler(file_handler)
 logger.addHandler(stream_handler)
 
-# -----------------------------------
-# UTILS
-# -----------------------------------
 def read_tickers(file_path):
     try:
         with open(file_path, 'r') as f:
@@ -57,9 +51,6 @@ def normalize_value(v):
     return str(v)
 
 
-# -----------------------------------
-# SAFETY CHECK
-# -----------------------------------
 def table_near_limit(table_name, threshold_gb=24):
     """Return True if the table is at or above threshold (default 24GB)."""
     dynamo = boto3.client("dynamodb")
@@ -73,7 +64,7 @@ def table_near_limit(table_name, threshold_gb=24):
         return False
     except ClientError as e:
         logging.error(f"Could not describe table {table_name}: {e}")
-        return True  # fail-safe
+        raise RuntimeError(f"Cannot check table size due to missing permissions: {e}")
 
 
 def write_options_to_dynamo(options_data, table_name="options_data"):
