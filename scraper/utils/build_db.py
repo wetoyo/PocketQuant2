@@ -157,12 +157,14 @@ def write_options_to_db(options_data, db_name="options_data.db"):
     Write options data to SQLite DB.
     options_data structure: { ticker: { expiration: { 'calls': df, 'puts': df } } }
     Creates one table per ticker containing all expirations and types.
+    Avoids rewriting existing entries by checking for duplicates.
     """
     if not options_data:
         print("No options data to write.")
         return
 
     conn = create_or_connect_db(db_name)
+    cursor = conn.cursor()
     
     for ticker, dates_dict in options_data.items():
         all_dfs = []
@@ -177,7 +179,18 @@ def write_options_to_db(options_data, db_name="options_data.db"):
                 # Add metadata columns
                 df_copy['EXPIRATION'] = date
                 df_copy['OPTION_TYPE'] = kind
-                df_copy['FETCH_DATE'] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+                
+                # Get current date and adjust to last weekday if needed
+                current_date = pd.Timestamp.now().normalize()  # Remove time component
+                weekday = current_date.weekday()
+                
+                # If Saturday (5) or Sunday (6), go back to Friday
+                if weekday == 5:  # Saturday
+                    current_date = current_date - pd.Timedelta(days=1)
+                elif weekday == 6:  # Sunday
+                    current_date = current_date - pd.Timedelta(days=2)
+                
+                df_copy['FETCH_DATE'] = current_date.strftime("%Y-%m-%d")
                 
                 # Ensure columns are strings to avoid DB issues
                 df_copy.columns = [str(c) for c in df_copy.columns]
@@ -192,12 +205,51 @@ def write_options_to_db(options_data, db_name="options_data.db"):
         table_name = ticker.upper()
         
         try:
-            # Append new data
+            # Check if table exists and read existing data
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+            table_exists = cursor.fetchone() is not None
+            
+            if table_exists:
+                # Read existing data
+                existing_df = pd.read_sql(f'SELECT * FROM "{table_name}"', conn)
+                
+                if not existing_df.empty:
+                    # Identify key columns that define uniqueness
+                    # Typically: strike, expiration, option_type, and potentially contractSymbol
+                    key_columns = ['EXPIRATION', 'OPTION_TYPE']
+                    
+                    # Add strike if it exists
+                    if 'strike' in combined_df.columns:
+                        key_columns.append('strike')
+                    
+                    # Add contractSymbol if it exists (most unique identifier)
+                    if 'contractSymbol' in combined_df.columns:
+                        key_columns.append('contractSymbol')
+                    
+                    # Create a composite key for comparison
+                    existing_df['_merge_key'] = existing_df[key_columns].astype(str).agg('||'.join, axis=1)
+                    combined_df['_merge_key'] = combined_df[key_columns].astype(str).agg('||'.join, axis=1)
+                    
+                    # Filter out rows that already exist
+                    new_rows = combined_df[~combined_df['_merge_key'].isin(existing_df['_merge_key'])]
+                    new_rows = new_rows.drop(columns=['_merge_key'])
+                    
+                    if new_rows.empty:
+                        print(f"No new options data to add for {ticker} (all entries already exist)")
+                        continue
+                    
+                    print(f"Found {len(new_rows)} new entries out of {len(combined_df)} total for {ticker}")
+                    combined_df = new_rows
+                else:
+                    print(f"Table '{table_name}' exists but is empty, writing all {len(combined_df)} rows")
+            else:
+                print(f"Creating new table '{table_name}' with {len(combined_df)} rows")
+            
+            # Append only new data
             combined_df.to_sql(table_name, conn, if_exists='append', index=False)
-            print(f"Options data appended to table '{table_name}' in {db_name}")
+            print(f"Options data written to table '{table_name}' in {db_name}")
             
             # Create index on FETCH_DATE if it doesn't exist
-            cursor = conn.cursor()
             index_name = f"idx_{table_name}_fetch_date"
             cursor.execute(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} (FETCH_DATE)")
             conn.commit()
