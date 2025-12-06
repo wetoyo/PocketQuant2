@@ -2,7 +2,7 @@ name: Fetch Daily Options Data
 
 on:
   schedule:
-    - cron: "0 22 * * *"     # Runs daily at 22:00 UTC
+    - cron: "0 22 * * 1-5"   # Weekdays at 22:00 UTC
   workflow_dispatch:
 
 jobs:
