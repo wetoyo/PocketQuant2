@@ -2,11 +2,16 @@
 import os
 import time
 import logging
+import sys
 import pandas as pd
 from pathlib import Path
 from typing import List
 import requests
 from datetime import datetime, timedelta
+
+root = Path(__file__).parent.parent.parent  # project_root
+sys.path.append(str(root))
+from configs.paths import DATA_RAW, DATA_PROCESSED
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -134,9 +139,11 @@ class StockScraperAV:
         for ticker, df in self.data.items():
             df.drop_duplicates(inplace=True)
             df["DATE"] = pd.to_datetime(df["DATE"]).dt.tz_localize(None)
+            df.set_index("DATE", inplace=True)
             if self.fill_missing:
                 df.interpolate(method='time', inplace=True)
-                df.fillna(method='bfill', inplace=True)
+                df.bfill(inplace=True)
+            df.reset_index(inplace=True)
             self.data[ticker] = df
 
     def save_data(self, folder: str, format: str = "csv"):
@@ -156,7 +163,7 @@ class StockScraperAV:
             combined.append(df.assign(TICKER=ticker))
             logging.info(f"Saved {ticker} data to {file_path}")
 
-        if combined:
+        if len(combined) > 1:
             combined_df = pd.concat(combined, ignore_index=True)
 
             sorted_tickers = sorted(self.data.keys(), key=str.lower)
@@ -171,8 +178,48 @@ class StockScraperAV:
 
             logging.info(f"Saved combined data to {combined_file}")
 
+    def fetch_options(self):
+        """
+        Fetch options chain for all tickers using Alpha Vantage API.
+        Note: Alpha Vantage has limited options data support.
+        This is a placeholder implementation that logs a warning.
+        Stores in self.options_data = { ticker: { expiration: { 'calls': df, 'puts': df } } }
+        """
+        logging.warning("Alpha Vantage API has limited options data support. This feature is not fully implemented.")
+        self.options_data = {}
+        
+        # Alpha Vantage does not have a direct options endpoint in the free tier
+        # This would require a premium subscription or alternative implementation
+        # For now, we'll create an empty structure to maintain API compatibility
+        for ticker in self.tickers:
+            logging.info(f"Options data not available for {ticker} via Alpha Vantage free tier")
+            self.options_data[ticker] = {}
+
+    def save_options(self, folder: str, format: str = "csv"):
+        """
+        Save options data to folder/ticker/expiration_calls.csv
+        """
+        Path(folder).mkdir(parents=True, exist_ok=True)
+        
+        for ticker, dates_dict in getattr(self, 'options_data', {}).items():
+            ticker_folder = os.path.join(folder, ticker)
+            Path(ticker_folder).mkdir(parents=True, exist_ok=True)
+            
+            for date, chains in dates_dict.items():
+                for kind, df in chains.items(): # kind is 'calls' or 'puts'
+                    filename = f"{date}_{kind}.{format}"
+                    file_path = os.path.join(ticker_folder, filename)
+                    
+                    if format.lower() == "csv":
+                        df.to_csv(file_path, index=False)
+                    elif format.lower() == "parquet":
+                        df.to_parquet(file_path, index=False)
+                        
+            logging.info(f"Saved options for {ticker} to {ticker_folder}")
+
     def get_data(self, ticker: str):
         return self.data.get(ticker)
+
 
 # Example usage
 if __name__ == "__main__":
@@ -182,10 +229,10 @@ if __name__ == "__main__":
         tickers=["AAPL", "MSFT"], 
         start_date="2023-01-01", 
         end_date="2023-10-01", 
-        interval="1min", 
+        interval="1d", 
         adjusted=True, 
         fill_missing=True
     )
     scraper.fetch_data()
     scraper.clean_data()
-    scraper.save_data(folder="stock_data_av_throttle", format="csv")
+    scraper.save_data(folder=DATA_RAW, format="csv")
