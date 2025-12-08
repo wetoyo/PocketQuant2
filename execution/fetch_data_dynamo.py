@@ -125,7 +125,8 @@ def _batch_write(dynamo, table_name, items):
             dynamo.put_item(
                 TableName=table_name,
                 Item=item,
-                ConditionExpression="attribute_not_exists(date) AND attribute_not_exists(ticker_contract)"
+                ConditionExpression="attribute_not_exists(#d) AND attribute_not_exists(ticker_contract)",
+                ExpressionAttributeNames={"#d": "date"}
             )
         except ClientError as e:
             if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
@@ -179,3 +180,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+#TO RUN LOCALLY
+# dotenv run -- .\.venv\Scripts\python.exe .\execution\fetch_data_dynamo.py
