@@ -190,7 +190,7 @@ def main():
     TODO: Put Call parity only holds for European options. Find better way to access European options data, Yfinance doesnt support it. 
     """
     # Configuration
-    tickers = ["BNP.PA"]
+    tickers = ["SPY"]
     
     logging.info(f"Starting implied interest rate analysis for: {tickers}")
     
