@@ -7,7 +7,7 @@ import vectorbt as vbt
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from utils.backtester import Backtester
+from backtester import Backtester
 
 def run_multi_ticker_backtest():
     print("Initializing Backtester for AAPL and MSFT...")
