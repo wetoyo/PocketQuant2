@@ -144,6 +144,8 @@ class StockScraperAV:
                 df.interpolate(method='time', inplace=True)
                 df.bfill(inplace=True)
             df.reset_index(inplace=True)
+            # Add INTERVAL column for database storage
+            df["INTERVAL"] = self.interval
             self.data[ticker] = df
 
     def save_data(self, folder: str, format: str = "csv"):

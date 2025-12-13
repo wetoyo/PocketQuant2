@@ -16,11 +16,11 @@ def create_or_connect_db(db_path="database.db"):
     return conn
 
 
-def write_data_to_db(data_dict, db_path="database.db"):
+def write_data_to_db(data_dict, db_path="database.db", interval="1d"):
     """
     Write a dict of DataFrames (raw data or features) to SQLite DB.
     Each ticker gets its own table: <TICKER>.
-    Updates existing rows based on DATE (PRIMARY KEY).
+    Updates existing rows based on composite key (DATE, INTERVAL).
     """
     if not isinstance(data_dict, dict):
         raise ValueError("data_dict must be a dict of DataFrames keyed by ticker")
@@ -43,21 +43,30 @@ def write_data_to_db(data_dict, db_path="database.db"):
                  raise KeyError(f"Missing 'DATE' column in ticker {ticker} DataFrame")
         
         df = df.copy()
+        
+        # Add INTERVAL column if not present
+        if "INTERVAL" not in df.columns:
+            df["INTERVAL"] = interval
+        
         if pd.api.types.is_datetime64_any_dtype(df["DATE"]):
             df["DATE"] = df["DATE"].dt.strftime("%Y-%m-%d %H:%M:%S")
 
+        # Build column definitions with types
         columns_with_types = []
         for col in df.columns:
-            if df[col].dtype == object:
+            if col == "INTERVAL":
+                columns_with_types.append(f'"{col}" TEXT')
+            elif df[col].dtype == object:
                 columns_with_types.append(f'"{col}" TEXT')
             else:
                 columns_with_types.append(f'"{col}" REAL')
         columns_with_types_sql = ", ".join(columns_with_types)
 
+        # Create table with composite primary key
         create_sql = f"""
         CREATE TABLE IF NOT EXISTS "{table_name}" (
             {columns_with_types_sql},
-            PRIMARY KEY(DATE)
+            PRIMARY KEY(DATE, INTERVAL)
         )
         """
         cursor.execute(create_sql)
@@ -69,14 +78,14 @@ def write_data_to_db(data_dict, db_path="database.db"):
         """
         cursor.executemany(insert_sql, df.values.tolist())
         conn.commit()
-        print(f"Data written/updated in table '{table_name}'")
+        print(f"Data written/updated in table '{table_name}' for interval '{interval}'")
 
     conn.close()
 
 
-def get_ticker_date_range(db_path, ticker):
+def get_ticker_date_range(db_path, ticker, interval="1d"):
     """
-    Get the min and max date for a ticker in the DB.
+    Get the min and max date for a ticker in the DB for a specific interval.
     Returns (min_date, max_date) as strings, or (None, None) if table doesn't exist.
     """
     table_name = ticker.upper()
@@ -89,7 +98,8 @@ def get_ticker_date_range(db_path, ticker):
         conn.close()
         return None, None
 
-    cursor.execute(f'SELECT MIN(DATE), MAX(DATE) FROM "{table_name}"')
+    # Query for specific interval
+    cursor.execute(f'SELECT MIN(DATE), MAX(DATE) FROM "{table_name}" WHERE INTERVAL = ?', (interval,))
     result = cursor.fetchone()
     conn.close()
     
@@ -121,8 +131,8 @@ def read_by_ticker(db_path, ticker):
     return read_table(db_path, table_name)
 
 
-def read_by_date(db_path, ticker, start_date=None, end_date=None):
-    """Return rows filtered by date from a ticker's table."""
+def read_by_date(db_path, ticker, start_date=None, end_date=None, interval="1d"):
+    """Return rows filtered by date and interval from a ticker's table."""
     table_name = ticker.upper()
     conn = create_or_connect_db(db_path)
     
@@ -133,8 +143,8 @@ def read_by_date(db_path, ticker, start_date=None, end_date=None):
         conn.close()
         return pd.DataFrame()
 
-    query = f'SELECT * FROM "{table_name}" WHERE 1=1'
-    params = []
+    query = f'SELECT * FROM "{table_name}" WHERE INTERVAL = ?'
+    params = [interval]
 
     if start_date:
         query += " AND DATE >= ?"

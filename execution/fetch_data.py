@@ -14,11 +14,10 @@ sys.path.append(str(project_root))
 from scraper.api_clients.YFinance import StockScraper
 from configs.paths import DATA_RAW
 from scraper.utils.build_db import write_data_to_db, write_options_to_db
+from execution import LOGS_DIR
 
 # Setup logging
-log_dir = current_dir / "logs"
-log_dir.mkdir(exist_ok=True)
-log_file = log_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+log_file = LOGS_DIR / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
 # Get root logger
 logger = logging.getLogger()

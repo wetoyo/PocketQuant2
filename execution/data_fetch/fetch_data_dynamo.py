@@ -9,17 +9,16 @@ from botocore.exceptions import ClientError
 
 # Add project root to path
 current_dir = Path(__file__).parent
-project_root = current_dir.parent
+project_root = current_dir.parent.parent
 sys.path.append(str(project_root))
 
 from scraper.api_clients.YFinance import StockScraper
 from configs.paths import DATA_RAW  # not used for Dynamo, but imported for consistency
+from execution import LOGS_DIR
 
 
 # Setup logging
-log_dir = current_dir / "logs"
-log_dir.mkdir(exist_ok=True)
-log_file = log_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+log_file = LOGS_DIR / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -140,7 +139,7 @@ def main():
     start_time = time.time()
     logger.info("Starting options fetch process...")
 
-    tickers_file = current_dir / "tickers.txt"
+    tickers_file = current_dir.parent / "tickers.txt"
     if not tickers_file.exists():
         logger.error(f"Tickers file not found at {tickers_file}")
         return
@@ -182,4 +181,4 @@ if __name__ == "__main__":
     main()
 
 #TO RUN LOCALLY
-# dotenv run -- .\.venv\Scripts\python.exe .\execution\fetch_data_dynamo.py
+# dotenv run -- .\.venv\Scripts\python.exe .\execution\data_fetch\fetch_data_dynamo.py

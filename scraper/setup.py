@@ -96,7 +96,7 @@ class BaseSetup:
             print(f"Checking data for {ticker}...")
             
             # Check DB
-            min_date, max_date = get_ticker_date_range(self.db_path, ticker)
+            min_date, max_date = get_ticker_date_range(self.db_path, ticker, interval=self.interval)
             
             data_needed = False
             if min_date is None or max_date is None:
@@ -118,7 +118,7 @@ class BaseSetup:
                 else:
                     print(f"  Data for {ticker} exists in DB ({db_min.date()} to {db_max.date()}). Loading from DB.")
                     # Load from DB
-                    df = read_by_date(self.db_path, ticker, self.start_date, self.end_date)
+                    df = read_by_date(self.db_path, ticker, self.start_date, self.end_date, interval=self.interval)
                     self.data_dict[ticker] = df
 
             if data_needed:
@@ -160,7 +160,7 @@ class BaseSetup:
             
             # Write new data to DB
             print("Writing fetched data to database...")
-            write_data_to_db(scraper.data, db_path=self.db_path)
+            write_data_to_db(scraper.data, db_path=self.db_path, interval=self.interval)
             
             # Optionally save to CSV raw if needed (legacy support or backup)
             if save_folder:
