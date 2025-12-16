@@ -62,12 +62,25 @@ class Backtester(BaseSetup):
     def get_ticker_features(self, ticker):
         """
         Get features for a specific ticker.
+        Returns a DataFrame with datetime index if DATE column exists.
         """
         if not self.features:
             self._build_features()
             
         if ticker in self.features:
-            return self.features[ticker]
+            features = self.features[ticker].copy()
+            
+            # Convert DATE column to datetime index if it exists
+            if "DATE" in features.columns:
+                features = features.set_index(pd.to_datetime(features["DATE"]))
+            elif not isinstance(features.index, pd.DatetimeIndex):
+                # Try to convert existing index to datetime
+                try:
+                    features.index = pd.to_datetime(features.index)
+                except:
+                    print(f"Could not convert index to datetime for {ticker} features")
+            
+            return features
         return None
 
     def align_signals(self, signals_dict):
@@ -84,7 +97,20 @@ class Backtester(BaseSetup):
             entries (pd.DataFrame): Boolean DataFrame of entry signals (tickers as columns).
             exits (pd.DataFrame): Boolean DataFrame of exit signals (tickers as columns).
             price_col (str): Column name to use for execution price (default "CLOSE").
-            **kwargs: Additional arguments for vbt.Portfolio.from_signals (e.g. freq, init_cash, fees).
+            **kwargs: Additional arguments for vbt.Portfolio.from_signals, such as:
+                - freq (str or pd.Timedelta): Frequency of the data. 
+                    - "D" for daily
+                    - "H" for hourly
+                    - "T" for minute (5T, 15T, 30T)
+                    - "W" for weekly
+                    - "M" for monthly
+                - init_cash (float): Initial cash for the portfolio.
+                - fees (float): Trading fees per transaction.
+                - slippage (float): Slippage per trade.
+                - size (float or pd.Series): Position sizing.
+                - direction (str): 'long', 'short', or 'both'.
+                - group_by (str or list): Columns to group by for multiple portfolios.
+
             
         Returns:
             vbt.Portfolio: The resulting portfolio object.

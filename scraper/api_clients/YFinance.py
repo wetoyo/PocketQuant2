@@ -51,6 +51,10 @@ class StockScraper:
                     if df.empty:
                         logging.warning(f"No data found for {ticker}, skipping.")
                         break
+                    
+                    # Ensure index name is Date so reset_index creates 'Date' column
+                    df.index.name = "Date"
+
                     df.reset_index(inplace=True)
                     if isinstance(df.columns, pd.MultiIndex):
                         df.columns = df.columns.get_level_values(0)
@@ -75,6 +79,12 @@ class StockScraper:
         for ticker, df in self.data.items():
             df.drop_duplicates(inplace=True)
             df["DATE"] = pd.to_datetime(df["DATE"]).dt.tz_localize(None)
+            
+            # Drop rows where DATE is NaT
+            if df["DATE"].isna().any():
+                logging.warning(f"Dropping {df['DATE'].isna().sum()} rows with missing DATE for {ticker}")
+                df.dropna(subset=["DATE"], inplace=True)
+
             df.set_index("DATE", inplace=True)
             if self.fill_missing:
                 df.interpolate(method='time', inplace=True)
