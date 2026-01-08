@@ -144,8 +144,18 @@ class Backtester(BaseSetup):
             print("No portfolio to plot. Run backtest first.")
 
     def get_stats(self, **kwargs):
-        """Get portfolio statistics."""
+        """Get portfolio statistics.
+        
+        Args:
+            **kwargs: Additional arguments for portfolio.stats(), such as:
+                - agg_func: Aggregation function for multi-column portfolios (default: None for separate stats)
+                - metrics: List of specific metrics to return
+        """
         if self.portfolio:
+            # Set agg_func=None by default to avoid aggregation warning
+            # This returns stats for each column separately
+            if 'agg_func' not in kwargs:
+                kwargs['agg_func'] = None
             return self.portfolio.stats(**kwargs)
         else:
             print("No portfolio available.")
@@ -153,144 +163,109 @@ class Backtester(BaseSetup):
 
     def calculate_alpha_beta(self, benchmark_ticker, strategy_ticker, freq="D", error_tolerance=0.20, date_range=None):
         """
-        Calculate Alpha and Beta against a benchmark using asset returns.
+        Calculate Alpha and Beta against a benchmark using asset returns, with lookback window
+        determined by the target relative standard error.
         
         Args:
             benchmark_ticker (str): Ticker symbol for the benchmark (e.g., "QQQ").
             strategy_ticker (str): Ticker symbol for the strategy asset (e.g., "NVDA").
-            freq (str): Frequency to resample to for calculation (default "D" for daily).
+            freq (str): Frequency to resample to for calculation (default "D" for daily). Can be '5min', '15min', etc.
             error_tolerance (float): Target relative standard error for Beta (default 0.20).
             date_range (tuple): Optional (start_date, end_date) to restrict calculation period.
             
         Returns:
-            dict: Dictionary containing 'alpha', 'beta', 'n_bars_used', 'required_n' or None.
+            dict: {'beta', 'alpha', 'alpha_per_period', 'n_bars_used', 'required_n', 'beta_full'}
         """
         if self.portfolio is None:
             print("No portfolio available. Run backtest first.")
             return None
-            
+
         try:
-            # 1. Get asset prices for both strategy and benchmark
+            # --- 1. Get prices ---
             prices_df = self.get_price_data(price_col="CLOSE")
-            
             if strategy_ticker not in prices_df.columns:
                 print(f"Strategy ticker {strategy_ticker} not found in price data.")
                 return None
-                
             if benchmark_ticker not in prices_df.columns:
                 print(f"Benchmark {benchmark_ticker} not found in price data.")
                 return None
-            
+
             strategy_prices = prices_df[strategy_ticker]
             benchmark_prices = prices_df[benchmark_ticker]
-            
-            # Filter by date range if provided (for out-of-sample beta calculation)
+
+            # --- 2. Apply date range filter ---
             if date_range:
                 start_date, end_date = date_range
                 strategy_prices = strategy_prices[start_date:end_date]
                 benchmark_prices = benchmark_prices[start_date:end_date]
-            
-            # 2. Resample to specified frequency and calculate returns
+
+            # --- 3. Resample if frequency is specified ---
             if freq:
-                strategy_prices_resampled = strategy_prices.resample(freq).last().dropna()
-                benchmark_prices_resampled = benchmark_prices.resample(freq).last().dropna()
-            else:
-                strategy_prices_resampled = strategy_prices
-                benchmark_prices_resampled = benchmark_prices
-            
-            # Calculate returns
-            strategy_rets = strategy_prices_resampled.pct_change(fill_method=None).dropna()
-            benchmark_rets = benchmark_prices_resampled.pct_change(fill_method=None).dropna()
-                
-            # 3. Align indices
+                strategy_prices = strategy_prices.resample(freq).last().dropna()
+                benchmark_prices = benchmark_prices.resample(freq).last().dropna()
+
+            # --- 4. Compute returns ---
+            strategy_rets = strategy_prices.pct_change().dropna()
+            benchmark_rets = benchmark_prices.pct_change().dropna()
+
+            # --- 5. Align indices ---
             idx = strategy_rets.index.intersection(benchmark_rets.index)
             if len(idx) < 30:
-                # Not enough data in backtest period - need to fetch historical data
-                # Calculate how much historical data we need
-                min_required = 30
-                current_bars = len(idx)
-                
-                if current_bars < 10:
-                    print(f"Warning: Only {current_bars} bars available. Need at least 10 for alpha calculation.")
-                    print("Consider fetching more historical data or extending the backtest period.")
-                    return None
-                
-                print(f"Note: Using {current_bars} bars for alpha/beta calculation (recommended: 30+)")
-                print("For more robust estimates, consider fetching historical data before the backtest period.")
-                
-            full_Y = strategy_rets.loc[idx]
-            full_X = benchmark_rets.loc[idx]
-            
-            # 4. Full Data Stats for N estimation
-            cov_full = full_Y.cov(full_X)
-            var_full = full_X.var()
-            if var_full == 0:
-                print("Benchmark variance is 0.")
+                print(f"Not enough overlapping data ({len(idx)} bars) for reliable alpha/beta calculation.")
                 return None
-            
+
+            strat_full = strategy_rets.loc[idx]
+            bench_full = benchmark_rets.loc[idx]
+
+            # --- 6. Full beta and residuals ---
+            cov_full = strat_full.cov(bench_full)
+            var_full = bench_full.var()
+            if var_full == 0:
+                print("Benchmark variance is zero.")
+                return None
+
             beta_full = cov_full / var_full
-            
-            # Volatility (per bar)
-            sigma_m = full_X.std()
-            
-            # Residuals
-            alpha_intercept = full_Y.mean() - beta_full * full_X.mean()
-            residuals = full_Y - (alpha_intercept + beta_full * full_X)
-            sigma_epsilon = residuals.std()
-            
-            # 5. Calculate Required N
-            abs_beta = abs(beta_full)
-            if abs_beta < 1e-6:
-                target_se = error_tolerance
-            else:
-                target_se = error_tolerance * abs_beta
-                
-            if target_se < 1e-9:
-                required_n = len(full_X)
-            else:
-                required_n_float = (sigma_epsilon / (sigma_m * target_se)) ** 2
-                required_n = int(required_n_float)
-            
-            # Cap N and enforce minimum
-            n_bars = min(len(full_X), required_n)
-            n_bars = max(30, n_bars)  # Ensure statistical relevance
-            
-            # 6. Recalculate on Subset
-            final_Y = full_Y.iloc[-n_bars:]
-            final_X = full_X.iloc[-n_bars:]
-            
-            cov_final = final_Y.cov(final_X)
-            var_final = final_X.var()
-            if var_final == 0:
-                 beta_final = 0
-            else:
-                 beta_final = cov_final / var_final
-            
-            # 7. Calculate Alpha using regression intercept (annualized)
-            # Alpha = mean(Y) - beta * mean(X)
-            # This is the Jensen's alpha formula
-            alpha_per_period = final_Y.mean() - beta_final * final_X.mean()
-            
-            # Annualize based on frequency
-            if freq == "D":
-                periods_per_year = 252  # Trading days
-            elif freq == "W":
-                periods_per_year = 52
-            elif freq == "M":
-                periods_per_year = 12
-            else:
-                periods_per_year = 252  # Default to daily
-            
-            alpha_annualized = alpha_per_period * periods_per_year
-            
-            return {
-                'beta': beta_final,
-                'alpha': alpha_annualized,
-                'alpha_per_period': alpha_per_period,
-                'n_bars_used': n_bars,
-                'required_n': required_n,
-                'beta_full': beta_full
+            alpha_full = strat_full.mean() - beta_full * bench_full.mean()
+            residuals = strat_full - (alpha_full + beta_full * bench_full)
+            sigma_epsilon = residuals.std(ddof=1)
+            sigma_m = bench_full.std(ddof=1)
+
+            # --- 7. Compute required N for error tolerance ---
+            abs_beta = max(abs(beta_full), 1e-6)  # avoid div by zero
+            target_se = error_tolerance * abs_beta
+            required_n = int((sigma_epsilon / (sigma_m * target_se)) ** 2)
+            required_n = min(required_n, len(strat_full))
+            required_n = max(required_n, 30)  # minimum bars
+
+            # --- 8. Use last N bars ---
+            strat_subset = strat_full.iloc[-required_n:]
+            bench_subset = bench_full.iloc[-required_n:]
+
+            cov_subset = strat_subset.cov(bench_subset)
+            var_subset = bench_subset.var()
+            beta_final = cov_subset / var_subset if var_subset != 0 else 0
+
+            # --- 9. Alpha per period ---
+            alpha_per_period = strat_subset.mean() - beta_final * bench_subset.mean()
+
+            # --- 10. Annualize alpha based on frequency ---
+            freq_to_periods = {
+                "D": 252,
+                "W": 52,
+                "M": 12
             }
+            periods_per_year = freq_to_periods.get(freq, 252)  # default to daily
+            alpha_annualized = alpha_per_period * periods_per_year
+
+            return {
+                "beta": beta_final,
+                "alpha": alpha_annualized,
+                "alpha_per_period": alpha_per_period,
+                "n_bars_used": required_n,
+                "required_n": required_n,
+                "beta_full": beta_full
+            }
+
         except Exception as e:
             print(f"Error calculating alpha/beta: {e}")
             import traceback
