@@ -204,16 +204,12 @@ class FeatureEvaluator:
             "tradability": tradability
         }
 
-def run_evaluation_system(tickers: List[str], start_date: str = "2025-01-01", interval: str = "1m"):
+def run_evaluation_system(tickers: List[str], start_date: str = "2025-01-01", interval: str = "1m", feature_options: Optional[Dict] = None):
     """
     Main entry point for evaluating features across multiple tickers.
     """
-    # 1. Initialize Scraper Setup
-    setup = BaseSetup(
-        tickers=tickers,
-        start_date=start_date,
-        interval=interval,
-        features_options={
+    if feature_options is None:
+        feature_options = {
             "returns": True,
             "log_returns": True,
             "ma_windows": [5, 20, 50],
@@ -223,21 +219,35 @@ def run_evaluation_system(tickers: List[str], start_date: str = "2025-01-01", in
             "vol_windows": [10],
             "atr_windows": [14]
         }
+
+    # 1. Initialize Scraper Setup
+    setup = BaseSetup(
+        tickers=tickers,
+        start_date=start_date,
+        interval=interval,
+        features_options=feature_options
     )
     
     # Run full pipeline to get data and features
     print(f"--- Fetching Data and Generating Features for {tickers} ---")
     setup.run_pipeline()
     
-    # Create directory for plots
-    plot_dir = Path("research/plots")
-    plot_dir.mkdir(parents=True, exist_ok=True)
+    # Base results directory
+    from datetime import datetime
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    results_base = Path("research/results")
+    results_base.mkdir(parents=True, exist_ok=True)
     
     inventory = []
 
     for ticker in tickers:
         print(f"\n>>> Evaluating Features for {ticker}...")
         
+        # Create ticker-specific directory
+        ticker_dir = results_base / f"{today_str}_{ticker}"
+        plot_dir = ticker_dir / "plots"
+        plot_dir.mkdir(parents=True, exist_ok=True)
+
         # Get raw data and features for this ticker
         # note: setup.data is {ticker: raw_df}, setup.features is {ticker: feat_df}
         raw_df = setup.data.get(ticker)
@@ -261,6 +271,7 @@ def run_evaluation_system(tickers: List[str], start_date: str = "2025-01-01", in
         evaluator.bin_features(n_quantiles=5)
 
         # Evaluate and Classify each feature
+        ticker_inventory = []
         for feat in evaluator.features:
             print(f"Testing {feat}...")
             
@@ -274,22 +285,33 @@ def run_evaluation_system(tickers: List[str], start_date: str = "2025-01-01", in
             # Classification
             classification = evaluator.classify_feature(feat, results_5, delay_df)
             classification['ticker'] = ticker
+            ticker_inventory.append(classification)
             inventory.append(classification)
             
             # Plots (only for "Strong" or "Medium" to avoid noise explosion, or all for MVP)
             if classification['strength'] in ['Strong', 'Medium']:
                 evaluator.plot_monotonicity(feat, 'fwd_ret_5', results_5, save_path=plot_dir)
                 evaluator.analyze_regimes(feat, 'fwd_ret_5', save_path=plot_dir)
+        
+        # Save ticker-specific inventory
+        if ticker_inventory:
+            ticker_inv_df = pd.DataFrame(ticker_inventory)
+            csv_path = ticker_dir / f"{ticker}_features.csv"
+            ticker_inv_df.sort_values(by='spread', ascending=False).to_csv(csv_path, index=False)
+            print(f"Saved results for {ticker} to {csv_path}")
 
-    # Final Inventory Report
+    # Global Inventory Report (optional, kept for summary)
     inventory_df = pd.DataFrame(inventory)
     print("\n" + "="*50)
     print("FEATURE EVALUATION SUMMARY")
     print("="*50)
     if not inventory_df.empty:
         print(inventory_df.sort_values(by='spread', ascending=False).to_string(index=False))
-        inventory_df.to_csv("research/feature_inventory.csv", index=False)
-        print(f"\nInventory saved to research/feature_inventory.csv")
+        # Also save comprehensive one in the base results dir if desired, 
+        # or just rely on the individual ones. 
+        # For now, let's keep the legacy global file in research root or move it to results_base
+        # global_csv_path = results_base / f"{today_str}_full_inventory.csv"
+        # inventory_df.to_csv(global_csv_path, index=False)
     else:
         print("No features evaluated successfully.")
 
