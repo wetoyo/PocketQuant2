@@ -34,3 +34,9 @@ env/
 # --- OS junk ---
 .DS_Store
 Thumbs.db
+
+# --- Other ---
+/
+
+# --- Research ---
+research/**/*.png

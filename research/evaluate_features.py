@@ -317,4 +317,4 @@ def run_evaluation_system(tickers: List[str], start_date: str = "2025-01-01", in
 
 if __name__ == "__main__":
     # Example run
-    run_evaluation_system(["AAPL"], start_date="2025-12-27", interval="1m")
+    run_evaluation_system(["AAPL"], start_date="2025-12-27", interval="15m")
