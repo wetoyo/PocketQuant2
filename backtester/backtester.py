@@ -1,5 +1,6 @@
 import pandas as pd
 import vectorbt as vbt
+import yfinance as yf
 from scraper.setup import BaseSetup
 
 class Backtester(BaseSetup):
@@ -16,7 +17,8 @@ class Backtester(BaseSetup):
         Reshapes the self.data dict into a single DataFrame with tickers as columns.
         Useful for vectorbt.
         """
-        if not self.data:
+        is_empty = self.data.empty if isinstance(self.data, pd.DataFrame) else not bool(self.data)
+        if is_empty:
             print("No data found in memory. Checking if pipeline needs to be run...")
             # If data is empty, we might need to fetch it. 
             # But BaseSetup doesn't auto-fetch. 
@@ -59,12 +61,49 @@ class Backtester(BaseSetup):
             return self.data[ticker]
         return None
 
+    def get_dividends(self, start_date=None, end_date=None) -> dict:
+        """
+        Fetch dividend history for all loaded tickers using yfinance.
+
+        Args:
+            start_date (str | None): Override start date (e.g. "2021-05-12"). 
+                                     Defaults to the backtester's start_date.
+            end_date   (str | None): Override end date. Defaults to backtester's end_date.
+
+        Returns:
+            dict: {ticker: pd.Series} mapping each ticker to its dividend-per-share
+                  time series (DatetimeIndex, tz-naive, values > 0 only).
+        """
+        if isinstance(self.data, dict) and self.data:
+            tickers = list(self.data.keys())
+        elif hasattr(self, 'tickers') and self.tickers:
+            tickers = self.tickers
+        else:
+            tickers = []
+        start   = start_date or getattr(self, "start_date", None)
+        end     = end_date   or getattr(self, "end_date",   None)
+
+        result = {}
+        for ticker in tickers:
+            try:
+                t    = yf.Ticker(ticker)
+                hist = t.history(start=start, end=end, auto_adjust=False)
+                hist.index = hist.index.tz_localize(None)
+                divs = hist["Dividends"].dropna()
+                divs = divs[divs > 0]
+                result[ticker] = divs
+            except Exception as e:
+                print(f"[get_dividends] Could not fetch dividends for {ticker}: {e}")
+                result[ticker] = pd.Series(dtype=float)
+        return result
+
     def get_ticker_features(self, ticker):
         """
         Get features for a specific ticker.
         Returns a DataFrame with datetime index if DATE column exists.
         """
-        if not self.features:
+        feats_empty = self.features.empty if isinstance(self.features, pd.DataFrame) else not bool(self.features)
+        if feats_empty:
             self._build_features()
             
         if ticker in self.features:

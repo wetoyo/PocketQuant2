@@ -1,6 +1,6 @@
 def compute_macd(df, params=[(12,26,9)]):
     """
-    Compute MACD and Signal line.
+    Compute MACD ( Moving Average Convergence Divergence) and Signal line.
     params: list of tuples (fast, slow, signal)
     """
     result = df[["DATE"]].copy()
