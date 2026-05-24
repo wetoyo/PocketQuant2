@@ -45,7 +45,6 @@ def test_initialization():
     bt = Backtester(tickers=["AAPL"])
     assert bt.portfolio is None, "Portfolio should be None on initialization"
     print("✓ Backtester initialized successfully")
-    return True
 
 
 def test_get_price_data():
@@ -68,8 +67,6 @@ def test_get_price_data():
     prices_open = bt.get_price_data(price_col="OPEN")
     assert not prices_open.empty, "OPEN prices should not be empty"
     print(f"✓ Retrieved OPEN price data with shape: {prices_open.shape}")
-    
-    return True
 
 
 def test_get_ticker_data():
@@ -88,8 +85,6 @@ def test_get_ticker_data():
     missing_data = bt.get_ticker_data("NONEXISTENT")
     assert missing_data is None, "Non-existent ticker should return None"
     print("✓ Non-existent ticker returns None")
-    
-    return True
 
 
 def test_align_signals():
@@ -109,8 +104,6 @@ def test_align_signals():
     assert "TEST1" in aligned.columns, "TEST1 should be in columns"
     assert "TEST2" in aligned.columns, "TEST2 should be in columns"
     print(f"✓ Aligned signals with shape: {aligned.shape}")
-    
-    return True
 
 
 def test_run_backtest():
@@ -137,8 +130,6 @@ def test_run_backtest():
     assert bt.portfolio is not None, "Backtester should store portfolio"
     print(f"✓ Backtest completed successfully")
     print(f"  Total Return: {portfolio.total_return().values[0]:.2%}")
-    
-    return True
 
 
 def test_get_stats():
@@ -166,8 +157,6 @@ def test_get_stats():
     stats2 = bt2.get_stats()
     assert stats2 is None, "Stats should be None without portfolio"
     print("✓ Returns None when no portfolio exists")
-    
-    return True
 
 
 def test_calculate_alpha_beta_synthetic():
@@ -264,8 +253,6 @@ def test_calculate_alpha_beta_synthetic():
     expected_alpha_annualized = true_alpha_per_day * 252
     alpha_diff = abs(result['alpha'] - expected_alpha_annualized)
     print(f"  Alpha difference: {alpha_diff:.4%}")
-    
-    return True
 
 
 def test_calculate_alpha_beta():
@@ -328,8 +315,6 @@ def test_calculate_alpha_beta():
     result2 = bt2.calculate_alpha_beta("BENCHMARK", "STRATEGY")
     assert result2 is None, "Should return None without portfolio"
     print("✓ Returns None when no portfolio exists")
-    
-    return True
 
 
 def test_multi_ticker_backtest():
@@ -363,8 +348,6 @@ def test_multi_ticker_backtest():
     assert portfolio is not None, "Multi-ticker portfolio should not be None"
     print(f"✓ Multi-ticker backtest completed")
     print(f"  Number of tickers: {len(tickers)}")
-    
-    return True
 
 
 def test_edge_cases():
@@ -395,8 +378,6 @@ def test_edge_cases():
     except ValueError as e:
         if "No overlapping dates" in str(e):
             print("✓ Correctly raises error for non-overlapping dates")
-    
-    return True
 
 
 def run_all_tests():
@@ -423,8 +404,8 @@ def run_all_tests():
     
     for test in tests:
         try:
-            if test():
-                passed += 1
+            test()
+            passed += 1
         except Exception as e:
             failed += 1
             print(f"✗ {test.__name__} FAILED: {e}")

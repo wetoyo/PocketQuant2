@@ -30,18 +30,19 @@ df["target"] = (df["CLOSE"].shift(-1) > df["CLOSE"]).astype(int)
 *   `target = 0` if $C_{t+1} \leq C_t$.
 *   The last row in the DataFrame is dropped because its target is `NaN` (no $t+1$ close exists).
 
-### B. Leakage Prevention (Strict Shift)
-Because `target` at row $t$ is calculated using the close price at $t+1$, we must ensure that the model is only trained on features that were known *before* the price at $t+1$ was formed. 
+### B. Leakage Prevention (Strict Shift) ✅ Handled by `build_features`
+Because `target` at row $t$ is calculated using the close price at $t+1$, we must ensure that the model is only trained on features that were known *before* the price at $t+1$ was formed.
 
-To achieve this, the feature matrix $X$ is shifted forward by 1 bar:
-```python
-feature_cols = [c for c in df.columns if c not in ["DATE", "OPEN", "HIGH", "LOW", "CLOSE", "VOLUME", "target", "TICKER", "INTERVAL"]]
-X = df[feature_cols].shift(1)
-```
-By shifting the features by 1:
-*   The features used at row $t$ to predict $C_{t+1} > C_t$ are $F_{t-1}$.
+**This shift is now applied automatically inside `build_features` (`scraper/utils/feature_builder.py`).** Features returned by `bt.get_ticker_features()` already have a 1-bar lag baked in:
+*   The feature labelled `MA_10` at date $t$ reflects the moving average computed at $t-1$.
 *   $F_{t-1}$ is calculated using prices up to and including $t-1$.
 *   This creates a 1-bar buffer, ensuring no lookahead leakage of $C_t$ or $C_{t+1}$ prices into the training features.
+
+**Do NOT apply an additional `.shift(1)` in your model pipeline** — the shift has already been applied at the source. Doing so would create a 2-bar lag and degrade model performance. Just use `X = df[feature_cols]` directly:
+```python
+feature_cols = [c for c in df.columns if c not in ["DATE", "OPEN", "HIGH", "LOW", "CLOSE", "VOLUME", "target", "TICKER", "INTERVAL"]]
+X = df[feature_cols]   # already shifted by build_features
+```
 
 ---
 
@@ -50,14 +51,18 @@ By shifting the features by 1:
 Financial time series exhibit autocorrelation and regime changes. Standard random train-test splitting causes data leakage. The framework enforces a **chronological split** (split-point at 80% mark) to preserve temporal ordering:
 
 ```python
-split = int(len(df) * 0.8)
+mask = X.notna().all(axis=1)   # drop the first NaN row left by the feature shift
+X, y = X[mask], y[mask]
+
+split = int(len(X) * 0.8)     # use len(X) after filtering, not len(df)
 X_train = X.iloc[:split]
 X_test  = X.iloc[split:]
 y_train = y.iloc[:split]
 y_test  = y.iloc[split:]
 ```
-*   `shuffle=False` is set during preprocessing.
-*   This splits the dataset into an 80% historical training block and a subsequent 20% validation block.
+*   `shuffle=False` is enforced — never use random splitting on a time series.
+*   Split is computed on `len(X)` (after the NaN mask), not `len(df)`, to avoid an off-by-one at the boundary.
+*   This gives an 80% historical training block and a contiguous 20% out-of-sample validation block.
 
 ---
 

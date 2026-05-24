@@ -56,9 +56,14 @@ def build_features(
             f.columns = [col[0] if col[1] == '' else f"{col[0]}_{col[1]}" for col in f.columns]
             features[i] = f
     df_features = reduce(lambda left,right: pd.merge(left,right,on="DATE", how="outer"), features)
+
+    # Shift all feature values forward by 1 bar so that at time t the features
+    # reflect data known at t-1, preventing lookahead bias in predictive models.
+    feature_cols = [c for c in df_features.columns if c != "DATE"]
+    df_features[feature_cols] = df_features[feature_cols].shift(1)
+
     if save_path:
         filename = f"{ticker}_features.csv" if ticker else "features.csv"
         df_features.to_csv(save_path / filename, index=False)
-
 
     return df_features

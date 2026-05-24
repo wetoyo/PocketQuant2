@@ -14,6 +14,7 @@ This is the top-level index for the repository documentation located in `/instru
 | [evaluation_metrics.md](file:///d:/Files/Code/PocketQuant2/instructions/evaluation_metrics.md) | Portfolio stats, Alpha/Beta math, feature evaluation, delay decay |
 | [machine_learning.md](file:///d:/Files/Code/PocketQuant2/instructions/machine_learning.md) | XGBoost pipeline, target labeling, leakage prevention, chrono split |
 | [examples.md](file:///d:/Files/Code/PocketQuant2/instructions/examples.md) | Minimal MA crossover, ML classifier, event-driven dividend backtest |
+| [skills_backtest.md](file:///d:/Files/Code/PocketQuant2/instructions/skills_backtest.md) | End-to-end backtest guide: setup → signals → costs → stats → robustness tests |
 | [gotchas.md](file:///d:/Files/Code/PocketQuant2/instructions/gotchas.md) | Known bugs, test failures, timezone pitfalls, DB locking, CI issues |
 
 ---
@@ -21,9 +22,10 @@ This is the top-level index for the repository documentation located in `/instru
 ## Key Entry Points by Task
 
 ### "I want to run a new backtest"
-1. Read [backtesting.md](file:///d:/Files/Code/PocketQuant2/instructions/backtesting.md) → **Section 3** (signal-driven) or **Section 4** (event-driven)
+1. Read [skills_backtest.md](file:///d:/Files/Code/PocketQuant2/instructions/skills_backtest.md) — the end-to-end guide (setup → signals → costs → stats → robustness)
 2. Copy a template from [examples.md](file:///d:/Files/Code/PocketQuant2/instructions/examples.md)
-3. If confused by date mismatches: [gotchas.md](file:///d:/Files/Code/PocketQuant2/instructions/gotchas.md) → **Gotcha #1**
+3. For detailed API reference: [backtesting.md](file:///d:/Files/Code/PocketQuant2/instructions/backtesting.md)
+4. If confused by date mismatches: [gotchas.md](file:///d:/Files/Code/PocketQuant2/instructions/gotchas.md) → **Gotcha #1**
 
 ### "I want to add a new technical indicator/feature"
 1. Read [data_pipeline.md](file:///d:/Files/Code/PocketQuant2/instructions/data_pipeline.md) → **Section 3** (feature table)

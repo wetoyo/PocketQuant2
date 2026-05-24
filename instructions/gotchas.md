@@ -4,44 +4,30 @@ This document highlights critical gotchas, architectural assumptions, and common
 
 ---
 
-## 1. Timezone Naive Mismatches in Vectorbt
+## 1. Timezone Naive Mismatches in Vectorbt ✅ Fixed
 *   **The Issue**: `vectorbt` requires price DataFrames and signal DataFrames to have identical indexes. The API client cleaners localise raw data datetimes to UTC or convert them to US/Eastern timezone and then strip timezone info (`tz_localize(None)`).
 *   **The Gotcha**: If you calculate signals on features that retain timezone info (e.g. `US/Eastern`) and try to pass them to `run_backtest`, vectorbt will fail to align the indexes, throwing:
     ```
     ValueError: No overlapping dates between prices and signals.
     ```
-*   **Correction**: Always verify index timezone properties of prices and signals before running a backtest:
-    ```python
-    prices.index = prices.index.tz_localize(None)
-    signals.index = signals.index.tz_localize(None)
-    ```
+*   **Fix Applied**: `Backtester.run_backtest` (`backtester/backtester.py`) now strips timezone info from the prices, entries, and exits indexes before the intersection, so tz-aware inputs are handled automatically.
 
 ---
 
-## 2. Feature Shift & Lookahead Bias
+## 2. Feature Shift & Lookahead Bias ✅ Fixed
 *   **The Issue**: The target label for machine learning models is whether the *next* price is higher:
     ```python
     df["target"] = (df["CLOSE"].shift(-1) > df["CLOSE"]).astype(int)
     ```
 *   **The Gotcha**: If features $F_t$ (like `MA_10` computed up to time $t$) are directly matched against `target_t`, the model learns to predict price movements using features that have already seen part of the price information at time $t$, causing lookahead bias (leakage).
-*   **Correction**: In any predictive pipeline, shift the feature matrix forward by 1 bar:
-    ```python
-    X = df[feature_cols].shift(1)
-    ```
+*   **Fix Applied**: `build_features` (`scraper/utils/feature_builder.py`) now applies `.shift(1)` to all feature columns before returning, so every consumer automatically gets lookahead-free features. Do **not** apply an additional `.shift(1)` in downstream pipelines — the shift is already baked in at the source.
 
 ---
 
-## 3. SQLite Database Write Locks
+## 3. SQLite Database Write Locks ✅ Fixed
 *   **The Issue**: During execution runs or unit tests (`test_scraper_refactor.py`), SQLite files can become locked if multiple database connections are opened and not closed correctly.
 *   **The Gotcha**: If a unit test fails or exits abruptly before `conn.close()` is called, the database file will remain locked, and subsequent runs will throw `sqlite3.OperationalError: database is locked` or `PermissionError`.
-*   **Correction**: Ensure DB connections are wrapped in `try...finally` blocks or use context managers:
-    ```python
-    conn = sqlite3.connect(db_path)
-    try:
-        # Perform operations
-    finally:
-        conn.close()
-    ```
+*   **Fix Applied**: `write_data_to_db`, `get_ticker_date_range`, `read_by_date`, and `write_options_to_db` in `scraper/utils/build_db.py` are now all wrapped in `try/finally` blocks so `conn.close()` is guaranteed to run even if an exception is raised mid-operation.
 
 ---
 
@@ -93,8 +79,8 @@ This document highlights critical gotchas, architectural assumptions, and common
 
 ---
 
-## 9. `test_backtester.py` Returns `bool` Instead of `None` (pytest Warning)
+## 9. `test_backtester.py` Returns `bool` Instead of `None` (pytest Warning) ✅ Fixed
 
 *   **The Issue**: All 10 tests in [tests/test_backtester.py](file:///d:/Files/Code/PocketQuant2/tests/test_backtester.py) return `True` at the end, triggering `PytestReturnNotNoneWarning`.
 *   **The Gotcha**: pytest expects test functions to return `None`. Tests that `return True` still pass functionally, but generate noisy warnings in CI output.
-*   **Correction**: When writing new tests or extending the existing suite, omit the `return True` statement. The tests in this file were authored as standalone functions (they have their own `run_all_tests` runner) and were later collected by pytest without removing the return values.
+*   **Fix Applied**: All `return True` statements removed from the 10 test functions. `run_all_tests` updated to count a pass by successful execution (`test(); passed += 1`) rather than by return value.

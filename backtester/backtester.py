@@ -155,7 +155,17 @@ class Backtester(BaseSetup):
             vbt.Portfolio: The resulting portfolio object.
         """
         prices = self.get_price_data(price_col=price_col)
-        
+
+        # Strip timezone info so vectorbt can align price and signal indexes
+        if getattr(prices.index, 'tz', None) is not None:
+            prices.index = prices.index.tz_localize(None)
+        if getattr(entries.index, 'tz', None) is not None:
+            entries = entries.copy()
+            entries.index = entries.index.tz_localize(None)
+        if getattr(exits.index, 'tz', None) is not None:
+            exits = exits.copy()
+            exits.index = exits.index.tz_localize(None)
+
         # Align prices with signals
         # Ensure indices match
         common_index = prices.index.intersection(entries.index)

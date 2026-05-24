@@ -39,14 +39,14 @@ def model(ticker, start_date, end_date, interval="1d"):
         if c not in ["DATE", "OPEN", "HIGH", "LOW", "CLOSE", "VOLUME", "target", "TICKER", "INTERVAL"]
     ]
 
-    X = df[feature_cols].shift(1)
+    X = df[feature_cols]
     y = df["target"]
 
     mask = X.notna().all(axis=1)
     X = X[mask]
     y = y[mask]
 
-    split = int(len(df) * 0.8)
+    split = int(len(X) * 0.8)
 
     X_train = X.iloc[:split]
     X_test  = X.iloc[split:]
