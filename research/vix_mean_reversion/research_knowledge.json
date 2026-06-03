@@ -1,0 +1,75 @@
+{
+    "study_name": "VIX Volatility Mean-Reversion Research Study",
+    "last_updated": "2026-06-03",
+    "author": "Antigravity Research Director",
+    "ticker_universe": {
+        "volatility_index": "^VIX",
+        "equity_benchmark": "SPY"
+    },
+    "data_range": {
+        "start": "1993-01-29",
+        "end": "2026-06-01",
+        "total_bars": 8391
+    },
+    "key_findings": {
+        "volatility_mean_reversion_exists": true,
+        "statistical_significance": {
+            "is_significant": true,
+            "horizon_limit": "5d to 15d",
+            "warning": "Standard t-statistics are heavily inflated by autocorrelation from overlapping returns. After Newey-West correction (lag = H), significance at 30d+ horizons vanishes."
+        },
+        "regime_stability": {
+            "is_stable": false,
+            "strengths": "Strongest and most reliable in Bull Markets and Low-Volatility regimes (quick spike-and-crash).",
+            "weaknesses": "Breaks down during major systemic crises (e.g. 2008 Lehman, 2020 COVID) where VIX clusters and stays persistently high for months, causing massive losses for early mean-reversion entries."
+        },
+        "friction_impact": {
+            "short_vix_degradation": "Direct VIX replication or short volatility product trading (VXX/UVXY) is heavily degraded by transaction costs, slippage, and high borrowing fees (annualized borrow rate modeled at 5%).",
+            "preferred_implementation": "Long SPY post-VIX spike avoids borrowing cost friction and roll yields while capturing the equity market recovery."
+        }
+    },
+    "optimized_parameters": {
+        "strategy": "Long SPY on VIX Level Spike",
+        "signal_definition": "VIX Level Z-Score > 3.0 (using rolling 252-day lookback for mean and std deviation)",
+        "holding_period_trading_days": 3,
+        "overlap_treatment": "Treatment D (10-day cooldown period after signal to prevent cluster risk)"
+    },
+    "backtest_results_out_of_sample": {
+        "period": "2021-01-01 to 2026-06-01",
+        "strategies": {
+            "Short VIX (Idealized)": {
+                "parameters": "Threshold: Z3, H: 3, Treatment: D (Cooldown)",
+                "sharpe": 0.39,
+                "cagr": "3.52%",
+                "max_drawdown": "-10.51%"
+            },
+            "Long SPY": {
+                "parameters": "Threshold: Z3, H: 3, Treatment: D (Cooldown)",
+                "sharpe": 0.52,
+                "cagr": "4.89%",
+                "max_drawdown": "-12.18%"
+            },
+            "Short SPY (Control)": {
+                "parameters": "Threshold: Z3, H: 10, Treatment: B (Active Hold)",
+                "sharpe": -0.26,
+                "cagr": "-2.11%",
+                "max_drawdown": "-15.42%"
+            }
+        }
+    },
+    "machine_learning_conclusions": {
+        "model_suitability": "Conditioned regressor models (trained only on spike days) show moderate out-of-sample predictive power for decay magnitude.",
+        "top_features": [
+            "VIX_LVL",
+            "VIX_Z",
+            "SPY_DD"
+        ],
+        "interpretation": "VIX level and VIX z-score are positive predictors of reversion magnitude (higher spikes revert faster in percentage terms). SPY drawdown (SPY_DD) is a negative predictor (spikes accompanied by massive equity drops revert slower)."
+    },
+    "warnings_for_future_agents": [
+        "DO NOT use standard t-statistics for overlapping forward returns. Always apply Newey-West standard error correction.",
+        "DO NOT assume zero transaction costs or zero borrow rates for shorting volatility index proxies. A 5%+ borrow rate is mandatory for realistic simulations.",
+        "DO NOT optimize parameters on out-of-sample data. Walk-forward testing shows that optimal parameters change over time and overfitting can occur.",
+        "Acknowledge the Nikkei/VIX spike of Aug 2024: entering SPY long immediately on a VIX spike before the true crash bottom occurred led to immediate drawdowns in the OOS demo."
+    ]
+}
