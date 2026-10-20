@@ -31,4 +31,4 @@ jobs:
           aws-region: us-east-1
 
       - name: Run fetch script
-        run: python execution/fetch_data_dynamo.py
+        run: python execution/data_fetch/fetch_data_dynamo.py

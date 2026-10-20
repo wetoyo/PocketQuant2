@@ -187,7 +187,7 @@ class SilverAnalysis:
         print(f"\nCorrelation between Overnight SI=F % and SLV Opening Spike %: {corr:.4f}")
         
         # Save to CSV
-        filename = "expirments/silver_trade/silver_analysis_results.csv"
+        filename = "experiments/silver_trade/silver_analysis_results.csv"
         self.results_df.to_csv(filename, index=False)
         logging.info(f"Full results saved to {filename}")
 

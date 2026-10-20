@@ -160,7 +160,7 @@ if __name__ == "__main__":
 
 ## 3. Advanced Backtest: Event-Driven Reinvestment Portfolio
 
-This example mimics the dividend tail hedging strategy in [expirments/svol_vixy_tailhedge.py](file:///d:/Files/Code/PocketQuant2/expirments/svol_vixy_tailhedge.py) where custom order volumes (shares) are calculated at specific dividend payout dates.
+This example mimics the dividend tail hedging strategy in [experiments/svol_vixy_tailhedge.py](file:///d:/Files/Code/PocketQuant2/experiments/svol_vixy_tailhedge.py) where custom order volumes (shares) are calculated at specific dividend payout dates.
 
 ```python
 import pandas as pd

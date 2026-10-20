@@ -57,10 +57,7 @@ To run a backtest, follow the **[backtest skill](.claude/skills/backtest/SKILL.m
 
 ## Known issues
 
-- **`requirements.txt` is UTF-16-encoded**, not UTF-8 (looks like it was produced by `pip freeze` in PowerShell). It happens to still work with `pip install -r`, but breaks tools that assume UTF-8. Worth re-saving as UTF-8 if you touch it.
-- **`.github/workflows/fetch-options.yml`** runs `python execution/fetch_data_dynamo.py`, but the script actually lives at `execution/data_fetch/fetch_data_dynamo.py`. The scheduled workflow is likely broken as-is.
-- `instructions/architecture.md` and `instructions/index.md` still refer to an `expirments/` (typo) directory and a `skills_backtest.md` file; the real paths are `experiments/` and `.claude/skills/backtest/`.
-- `test_no_future_leakage` for the `RETURN` feature is a known false-positive failure — see `instructions/gotchas.md` #8 before "fixing" it.
+None currently tracked — see `instructions/gotchas.md` for pitfalls and past fixes.
 
 ## Data & caching
 

@@ -108,7 +108,7 @@ print(stats)
 
 ## 4. Step-by-Step Backtest Implementation (Event-Driven)
 
-Refer to the historical example in [expirments/svol_vixy_tailhedge.py](file:///d:/Files/Code/PocketQuant2/expirments/svol_vixy_tailhedge.py) for implementing an event-driven backtest:
+Refer to the historical example in [experiments/svol_vixy_tailhedge.py](file:///d:/Files/Code/PocketQuant2/experiments/svol_vixy_tailhedge.py) for implementing an event-driven backtest:
 
 1.  **Initialize Backtester**: Download prices and dividend history using `bt.get_dividends()`.
 2.  **Create Order Sizing DataFrame**: Initialize a DataFrame of zeros matching the shape of prices:

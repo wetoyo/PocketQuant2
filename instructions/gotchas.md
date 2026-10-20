@@ -66,16 +66,13 @@ This document highlights critical gotchas, architectural assumptions, and common
 
 ---
 
-## 8. Brittle Leakage Test for the `RETURN` Feature (Known Failing Test)
+## 8. Brittle Leakage Test for the `RETURN` Feature ✅ Fixed
 
-> **Status**: `test_no_future_leakage` in [models/daily_model/xgboost/tests/test_leakage.py](file:///d:/Files/Code/PocketQuant2/models/daily_model/xgboost/tests/test_leakage.py) **fails in CI** (1 of 21 tests).
+> **Status**: Fixed. `test_no_future_leakage` in [models/daily_model/xgboost/tests/test_leakage.py](file:///d:/Files/Code/PocketQuant2/models/daily_model/xgboost/tests/test_leakage.py) now passes.
 
-*   **The Issue**: The test checks that `abs(corr(feature, CLOSE_future)) <= abs(corr(feature, CLOSE_now)) + 1e-3` for every feature. It **always fails for `RETURN`**.
-*   **Why It Fails**: `RETURN` is defined as `CLOSE.pct_change()`, which computes the **backward-looking** daily return at time $t$:
-    $$\text{RETURN}_t = \frac{C_t - C_{t-1}}{C_{t-1}}$$
-    Because stock returns are weakly positively autocorrelated at short horizons, `RETURN_t` is sometimes *slightly* more correlated with $C_{t+1}$ than with $C_t$ itself — a statistical artifact of momentum, not true lookahead leakage. The 1e-3 tolerance in the assertion is too tight.
-*   **This is NOT a real data leakage bug**. `RETURN` is computed using only $C_t$ and $C_{t-1}$, so no future information is used. The test's correlation-based heuristic is fundamentally unsuited to detecting leakage in auto-correlated series.
-*   **Correction for Agents**: Do not suppress or skip this test, but understand it is a false positive. The correct leakage guard for features is the **shift test** (`test_feature_shift`), which passes. If you add new features, use `test_feature_shift` as the canonical leakage check, not `test_no_future_leakage`.
+*   **The Old Issue**: The test checked `abs(corr(feature, CLOSE_future)) <= abs(corr(feature, CLOSE_now)) + 1e-3` and always failed for `RETURN` (`CLOSE.pct_change()`). Short-horizon return autocorrelation made `RETURN_t` slightly more correlated with $C_{t+1}$ than $C_t$ — a statistical artifact, not real leakage.
+*   **The Fix**: The test is now structural. It recomputes the features with `build_features` after randomly scrambling every OHLCV bar after a cutoff $k$, and asserts that feature rows up to $k+1$ are unchanged (features are shifted one bar, so row $t$ may only use data through $t-1$). This is deterministic and has no false positives for autocorrelated series.
+*   **Correction for Agents**: A failure of `test_no_future_leakage` now indicates a **real** lookahead bug (e.g. a centered window, `shift(-n)`, or a missing `.shift(1)`) — fix the feature, don't relax the test. If you change `features_options` in `xgboost_model.model()`, update `FEATURES_OPTIONS` in the test to match.
 
 ---
 

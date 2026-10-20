@@ -14,7 +14,7 @@ This is the top-level index for the repository documentation located in `/instru
 | [evaluation_metrics.md](file:///d:/Files/Code/PocketQuant2/instructions/evaluation_metrics.md) | Portfolio stats, Alpha/Beta math, feature evaluation, delay decay |
 | [machine_learning.md](file:///d:/Files/Code/PocketQuant2/instructions/machine_learning.md) | XGBoost pipeline, target labeling, leakage prevention, chrono split |
 | [examples.md](file:///d:/Files/Code/PocketQuant2/instructions/examples.md) | Minimal MA crossover, ML classifier, event-driven dividend backtest |
-| [skills_backtest.md](file:///d:/Files/Code/PocketQuant2/instructions/skills_backtest.md) | End-to-end backtest guide: setup → signals → costs → stats → robustness tests |
+| [backtest skill](file:///d:/Files/Code/PocketQuant2/.claude/skills/backtest/SKILL.md) | End-to-end backtest guide: setup → signals → costs → stats → robustness tests |
 | [gotchas.md](file:///d:/Files/Code/PocketQuant2/instructions/gotchas.md) | Known bugs, test failures, timezone pitfalls, DB locking, CI issues |
 
 ---
@@ -22,7 +22,7 @@ This is the top-level index for the repository documentation located in `/instru
 ## Key Entry Points by Task
 
 ### "I want to run a new backtest"
-1. Read [skills_backtest.md](file:///d:/Files/Code/PocketQuant2/instructions/skills_backtest.md) — the end-to-end guide (setup → signals → costs → stats → robustness)
+1. Read the [backtest skill](file:///d:/Files/Code/PocketQuant2/.claude/skills/backtest/SKILL.md) (`.claude/skills/backtest/`) — the end-to-end guide (setup → signals → costs → stats → robustness)
 2. Copy a template from [examples.md](file:///d:/Files/Code/PocketQuant2/instructions/examples.md)
 3. For detailed API reference: [backtesting.md](file:///d:/Files/Code/PocketQuant2/instructions/backtesting.md)
 4. If confused by date mismatches: [gotchas.md](file:///d:/Files/Code/PocketQuant2/instructions/gotchas.md) → **Gotcha #1**
@@ -52,7 +52,7 @@ This is the top-level index for the repository documentation located in `/instru
 
 ### "Tests are failing / CI is broken"
 1. Read [gotchas.md](file:///d:/Files/Code/PocketQuant2/instructions/gotchas.md) fully
-2. **`test_no_future_leakage` failure on `RETURN`** is a known false positive — see **Gotcha #8**
+2. `test_no_future_leakage` is a structural perturbation test — a failure there is a real lookahead bug (see **Gotcha #8**)
 3. **`PytestReturnNotNoneWarning`** warnings from `test_backtester.py` are cosmetic — see **Gotcha #9**
 
 ---
@@ -63,15 +63,15 @@ Run with: `.\.venv\Scripts\python.exe -m pytest`
 
 | Test File | Tests | Status |
 |:---|:---:|:---:|
-| `expirments/test_av.py` | 2 | ✅ Pass |
+| `experiments/test_av.py` | 2 | ✅ Pass |
 | `models/daily_model/xgboost/tests/test_auc.py` | 3 | ✅ Pass |
 | `models/daily_model/xgboost/tests/test_labels.py` | 1 | ✅ Pass |
-| `models/daily_model/xgboost/tests/test_leakage.py` | 2 | ⚠️ 1 known false positive |
+| `models/daily_model/xgboost/tests/test_leakage.py` | 2 | ✅ Pass |
 | `models/daily_model/xgboost/tests/test_split.py` | 1 | ✅ Pass |
 | `tests/test_backtester.py` | 10 | ✅ Pass (with warnings) |
 | `tests/test_real_aapl.py` | 1 | ✅ Pass |
 | `tests/test_scraper_refactor.py` | 1 | ✅ Pass |
-| **Total** | **21** | **20 pass / 1 known false positive** |
+| **Total** | **21** | **21 pass** |
 
 ---
 

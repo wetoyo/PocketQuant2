@@ -98,7 +98,7 @@ A dedicated test suite resides in [models/daily_model/xgboost/tests/](file:///d:
 
 *   `conftest.py`: Sets up a shared session-scoped `model_results` fixture that trains the model once on a small sample of AAPL data.
 *   `test_leakage.py`:
-    *   `test_no_future_leakage`: Verifies that the correlation of a feature with future prices ($C_{t+1}$) is not stronger than its correlation with current prices ($C_t$).
+    *   `test_no_future_leakage`: Recomputes the features after scrambling all bars after a cutoff $k$ and verifies that feature rows up to $k+1$ are unchanged (i.e. features at $t$ use only data through $t-1$).
     *   `test_feature_shift`: Checks that the number of `NaN` rows in the feature columns is greater than or equal to the number of `NaN` rows in the target column (validating that the shift was executed).
 *   `test_split.py`:
     *   `test_time_split_order`: Ensures that the maximum index of the training set is strictly less than the minimum index of the test set.
