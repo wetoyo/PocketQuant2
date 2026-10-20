@@ -2,7 +2,6 @@
 
 A personal quantitative trading research repo: fetch market data, build technical/statistical features, backtest strategies with [vectorbt](https://github.com/polakowo/vectorbt), and train ML models (XGBoost) on top of it. Includes a standing research track on VIX mean-reversion and a scheduled options-data fetch pipeline.
 
-> Looking to extend this with Kalshi and Polymarket trading ideas next.
 
 ## Layout
 
